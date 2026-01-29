@@ -187,7 +187,7 @@ export default function App() {
   const handleLogout = () => {
     setIsAuthenticated(false);
     localStorage.removeItem('pgd-authenticated');
-    setAppMode('sourceForm'); // Send back to public source form
+    setAppMode('normal'); // Send back to public landing page
   };
 
   const requireAuth = (callback) => {
