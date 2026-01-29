@@ -1,50 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabase';
 
-// Company Logo Component
+// Company Logo Component - uses image file from public folder
 const CompanyLogo = ({ size = 120 }) => (
-  <svg width={size} height={size} viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="60" cy="60" r="56" fill="none" stroke="#1a365d" strokeWidth="3"/>
-    <circle cx="60" cy="60" r="48" fill="none" stroke="#1a365d" strokeWidth="1.5"/>
-    <ellipse cx="60" cy="60" rx="35" ry="12" fill="none" stroke="#2c5282" strokeWidth="1.5"/>
-    <ellipse cx="60" cy="60" rx="35" ry="25" fill="none" stroke="#2c5282" strokeWidth="1"/>
-    <ellipse cx="60" cy="60" rx="12" ry="35" fill="none" stroke="#2c5282" strokeWidth="1.5"/>
-    <ellipse cx="60" cy="60" rx="25" ry="35" fill="none" stroke="#2c5282" strokeWidth="1"/>
-    <circle cx="60" cy="60" r="22" fill="#1a365d"/>
-    <text x="60" y="67" textAnchor="middle" fill="white" fontSize="18" fontWeight="bold" fontFamily="Georgia, serif">PGD</text>
-    <path id="topArc" d="M 15 60 A 45 45 0 0 1 105 60" fill="none"/>
-    <text fontSize="8" fontWeight="600" fill="#1a365d" fontFamily="Arial, sans-serif">
-      <textPath href="#topArc" startOffset="50%" textAnchor="middle">PRESTIGE GLOBAL</textPath>
-    </text>
-    <path id="bottomArc" d="M 105 60 A 45 45 0 0 1 15 60" fill="none"/>
-    <text fontSize="8" fontWeight="600" fill="#1a365d" fontFamily="Arial, sans-serif">
-      <textPath href="#bottomArc" startOffset="50%" textAnchor="middle">DISTRIBUTORS</textPath>
-    </text>
-  </svg>
+  <img
+    src="/logo.png"
+    alt="Prestige Global Distributors"
+    style={{ width: size, height: 'auto', objectFit: 'contain' }}
+  />
 );
 
-// Generate logo as base64 for PDF
-const getLogoBase64 = () => {
-  const svgString = `<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="60" cy="60" r="56" fill="none" stroke="#1a365d" stroke-width="3"/>
-    <circle cx="60" cy="60" r="48" fill="none" stroke="#1a365d" stroke-width="1.5"/>
-    <ellipse cx="60" cy="60" rx="35" ry="12" fill="none" stroke="#2c5282" stroke-width="1.5"/>
-    <ellipse cx="60" cy="60" rx="35" ry="25" fill="none" stroke="#2c5282" stroke-width="1"/>
-    <ellipse cx="60" cy="60" rx="12" ry="35" fill="none" stroke="#2c5282" stroke-width="1.5"/>
-    <ellipse cx="60" cy="60" rx="25" ry="35" fill="none" stroke="#2c5282" stroke-width="1"/>
-    <circle cx="60" cy="60" r="22" fill="#1a365d"/>
-    <text x="60" y="67" text-anchor="middle" fill="white" font-size="18" font-weight="bold" font-family="Georgia, serif">PGD</text>
-    <path id="topArc" d="M 15 60 A 45 45 0 0 1 105 60" fill="none"/>
-    <text font-size="8" font-weight="600" fill="#1a365d" font-family="Arial, sans-serif">
-      <textPath href="#topArc" startOffset="50%" text-anchor="middle">PRESTIGE GLOBAL</textPath>
-    </text>
-    <path id="bottomArc" d="M 105 60 A 45 45 0 0 1 15 60" fill="none"/>
-    <text font-size="8" font-weight="600" fill="#1a365d" font-family="Arial, sans-serif">
-      <textPath href="#bottomArc" startOffset="50%" text-anchor="middle">DISTRIBUTORS</textPath>
-    </text>
-  </svg>`;
-  return 'data:image/svg+xml;base64,' + btoa(svgString);
-};
+// Logo URL for use in other places
+const logoUrl = '/logo.png';
 
 export default function App() {
   const companyInfo = {
