@@ -1041,13 +1041,15 @@ Prestige Global Distributors
       return;
     }
 
+    // Check if html2pdf is loaded from CDN
+    if (typeof window.html2pdf === 'undefined') {
+      alert('PDF library not loaded. Please refresh the page and try again.');
+      return;
+    }
+
     setIsGeneratingPDF(true);
 
     try {
-      // Dynamic import of html2pdf
-      const html2pdfModule = await import('html2pdf.js');
-      const html2pdf = html2pdfModule.default;
-
       const opt = {
         margin: 0.5,
         filename: `${currentInvoice.invoiceNumber}.pdf`,
@@ -1056,7 +1058,7 @@ Prestige Global Distributors
         jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
       };
 
-      await html2pdf().set(opt).from(element).save();
+      await window.html2pdf().set(opt).from(element).save();
     } catch (error) {
       console.error('PDF generation error:', error);
       alert('Error generating PDF. Please try using Print instead.');
@@ -1069,14 +1071,17 @@ Prestige Global Distributors
   const emailInvoiceWithPDF = async () => {
     if (!currentInvoice) return;
 
+    // Check if html2pdf is loaded
+    if (typeof window.html2pdf === 'undefined') {
+      alert('PDF library not loaded. Please refresh and try again.');
+      return;
+    }
+
     // First download the PDF
     setIsGeneratingPDF(true);
     const element = document.getElementById('invoice-print');
 
     try {
-      const html2pdfModule = await import('html2pdf.js');
-      const html2pdf = html2pdfModule.default;
-
       const opt = {
         margin: 0.5,
         filename: `${currentInvoice.invoiceNumber}.pdf`,
@@ -1086,7 +1091,7 @@ Prestige Global Distributors
       };
 
       // Download the PDF first
-      await html2pdf().set(opt).from(element).save();
+      await window.html2pdf().set(opt).from(element).save();
 
       // Then open email client
       setTimeout(() => {
