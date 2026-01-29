@@ -529,6 +529,186 @@ export default function App() {
     }
   };
 
+  // ============ DEAL TRACKER ============
+  const [deals, setDeals] = useState([]);
+  const [showDealForm, setShowDealForm] = useState(false);
+  const [editingDeal, setEditingDeal] = useState(null);
+  const [dealFilter, setDealFilter] = useState('all'); // all, thisMonth, thisQuarter
+  const [dealForm, setDealForm] = useState({
+    source: '',
+    product: '',
+    quantity: '',
+    unit: 'cases',
+    costPerUnit: '',
+    sellPrice: '',
+    status: 'pending', // pending, closed, cancelled
+    notes: '',
+    dealDate: new Date().toISOString().split('T')[0]
+  });
+
+  // Margin presets
+  const marginPresets = [
+    { name: 'Quick Turn', margin: 15, range: '10-20%', color: 'amber' },
+    { name: 'Diverter Deal', margin: 30, range: '25-40%', color: 'emerald' },
+    { name: 'Direct Manufacturer', margin: 45, range: '40-50%', color: 'blue' },
+    { name: 'Custom', margin: null, range: 'Set your own', color: 'stone' }
+  ];
+
+  // Load deals from Supabase
+  const loadDeals = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('deals')
+        .select('*')
+        .order('deal_date', { ascending: false });
+      if (error) throw error;
+      setDeals(data || []);
+    } catch (err) {
+      console.error('Failed to load deals:', err);
+      const saved = localStorage.getItem('pgd-deals');
+      if (saved) setDeals(JSON.parse(saved));
+    }
+  };
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadDeals();
+    }
+  }, [isAuthenticated]);
+
+  // Calculate deal metrics
+  const calculateDealMetrics = (deal) => {
+    const cost = parseFloat(deal.cost_per_unit) || 0;
+    const sell = parseFloat(deal.sell_price) || 0;
+    const qty = parseFloat(deal.quantity) || 0;
+    const profit = (sell - cost) * qty;
+    const margin = sell > 0 ? ((sell - cost) / sell) * 100 : 0;
+    const totalRevenue = sell * qty;
+    const totalCost = cost * qty;
+    return { profit, margin, totalRevenue, totalCost };
+  };
+
+  // Apply margin preset to deal form
+  const applyMarginPreset = (preset) => {
+    if (preset.margin && dealForm.costPerUnit) {
+      const cost = parseFloat(dealForm.costPerUnit);
+      const sellPrice = (cost / (1 - preset.margin / 100)).toFixed(2);
+      setDealForm({ ...dealForm, sellPrice });
+    }
+  };
+
+  // Save deal
+  const saveDeal = async () => {
+    const dealData = {
+      source: dealForm.source,
+      product: dealForm.product,
+      quantity: dealForm.quantity,
+      unit: dealForm.unit,
+      cost_per_unit: dealForm.costPerUnit,
+      sell_price: dealForm.sellPrice,
+      status: dealForm.status,
+      notes: dealForm.notes,
+      deal_date: dealForm.dealDate
+    };
+
+    try {
+      if (editingDeal) {
+        const { error } = await supabase.from('deals').update(dealData).eq('id', editingDeal.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('deals').insert([{ ...dealData, created_at: new Date().toISOString() }]);
+        if (error) throw error;
+      }
+      await loadDeals();
+      closeDealForm();
+    } catch (err) {
+      console.error('Failed to save deal:', err);
+      const newDeals = editingDeal
+        ? deals.map(d => d.id === editingDeal.id ? { ...dealData, id: editingDeal.id } : d)
+        : [...deals, { ...dealData, id: Date.now() }];
+      setDeals(newDeals);
+      localStorage.setItem('pgd-deals', JSON.stringify(newDeals));
+      closeDealForm();
+    }
+  };
+
+  // Delete deal
+  const deleteDeal = async (id) => {
+    if (!confirm('Delete this deal?')) return;
+    try {
+      const { error } = await supabase.from('deals').delete().eq('id', id);
+      if (error) throw error;
+      await loadDeals();
+    } catch (err) {
+      console.error('Failed to delete deal:', err);
+      const newDeals = deals.filter(d => d.id !== id);
+      setDeals(newDeals);
+      localStorage.setItem('pgd-deals', JSON.stringify(newDeals));
+    }
+  };
+
+  const closeDealForm = () => {
+    setShowDealForm(false);
+    setEditingDeal(null);
+    setDealForm({
+      source: '', product: '', quantity: '', unit: 'cases',
+      costPerUnit: '', sellPrice: '', status: 'pending', notes: '',
+      dealDate: new Date().toISOString().split('T')[0]
+    });
+  };
+
+  const startEditDeal = (deal) => {
+    setEditingDeal(deal);
+    setDealForm({
+      source: deal.source || '',
+      product: deal.product || '',
+      quantity: deal.quantity || '',
+      unit: deal.unit || 'cases',
+      costPerUnit: deal.cost_per_unit || '',
+      sellPrice: deal.sell_price || '',
+      status: deal.status || 'pending',
+      notes: deal.notes || '',
+      dealDate: deal.deal_date || new Date().toISOString().split('T')[0]
+    });
+    setShowDealForm(true);
+  };
+
+  // Filter deals by time period
+  const getFilteredDeals = () => {
+    const now = new Date();
+    const thisMonth = now.getMonth();
+    const thisYear = now.getFullYear();
+    const thisQuarter = Math.floor(thisMonth / 3);
+
+    return deals.filter(d => {
+      if (dealFilter === 'all') return true;
+      const dealDate = new Date(d.deal_date);
+      if (dealFilter === 'thisMonth') {
+        return dealDate.getMonth() === thisMonth && dealDate.getFullYear() === thisYear;
+      }
+      if (dealFilter === 'thisQuarter') {
+        return Math.floor(dealDate.getMonth() / 3) === thisQuarter && dealDate.getFullYear() === thisYear;
+      }
+      return true;
+    });
+  };
+
+  // Calculate summary stats
+  const getDealSummary = () => {
+    const filtered = getFilteredDeals().filter(d => d.status === 'closed');
+    let totalRevenue = 0, totalCost = 0, totalProfit = 0, dealCount = filtered.length;
+
+    filtered.forEach(deal => {
+      const metrics = calculateDealMetrics(deal);
+      totalRevenue += metrics.totalRevenue;
+      totalCost += metrics.totalCost;
+      totalProfit += metrics.profit;
+    });
+
+    const avgMargin = totalRevenue > 0 ? ((totalRevenue - totalCost) / totalRevenue) * 100 : 0;
+    return { totalRevenue, totalCost, totalProfit, avgMargin, dealCount };
+  };
+
   const startEditContact = (contact) => {
     setEditingContact(contact);
     setContactForm({
@@ -1794,6 +1974,13 @@ View quote: ${generateShareLink()}
                 <span className="hidden sm:inline">Contacts</span>
                 <span className="sm:hidden">CRM</span>
               </button>
+              <button
+                onClick={() => setActiveTab('deals')}
+                className={`py-2 sm:py-3 px-1.5 sm:px-4 font-medium border-b-2 transition-colors text-xs sm:text-base whitespace-nowrap ${activeTab === 'deals' ? 'border-amber-600 text-amber-700' : 'border-transparent text-stone-500 hover:text-stone-700'}`}
+              >
+                <span className="hidden sm:inline">Deals</span>
+                <span className="sm:hidden">$</span>
+              </button>
               <span className="border-r border-amber-200 mx-1"></span>
               <button
                 onClick={handleLogout}
@@ -2580,6 +2767,362 @@ View quote: ${generateShareLink()}
                 <button onClick={loadContacts} className="text-amber-600 hover:text-amber-700 font-medium">Refresh</button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Deals Tracker */}
+      {activeTab === 'deals' && (
+        <div className="max-w-5xl mx-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
+          {/* Summary Cards */}
+          {(() => {
+            const summary = getDealSummary();
+            return (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                <div className="bg-white rounded-lg shadow-sm border border-amber-100 p-3 sm:p-4">
+                  <p className="text-xs text-stone-500 uppercase tracking-wide">Closed Deals</p>
+                  <p className="text-xl sm:text-2xl font-bold text-stone-800">{summary.dealCount}</p>
+                </div>
+                <div className="bg-white rounded-lg shadow-sm border border-amber-100 p-3 sm:p-4">
+                  <p className="text-xs text-stone-500 uppercase tracking-wide">Total Revenue</p>
+                  <p className="text-xl sm:text-2xl font-bold text-stone-800">${summary.totalRevenue.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}</p>
+                </div>
+                <div className="bg-white rounded-lg shadow-sm border border-amber-100 p-3 sm:p-4">
+                  <p className="text-xs text-stone-500 uppercase tracking-wide">Gross Profit</p>
+                  <p className="text-xl sm:text-2xl font-bold text-emerald-600">${summary.totalProfit.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}</p>
+                </div>
+                <div className="bg-white rounded-lg shadow-sm border border-amber-100 p-3 sm:p-4">
+                  <p className="text-xs text-stone-500 uppercase tracking-wide">Avg Margin</p>
+                  <p className="text-xl sm:text-2xl font-bold text-blue-600">{summary.avgMargin.toFixed(1)}%</p>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Deals List */}
+          <div className="bg-white/80 rounded-lg shadow-sm border border-amber-100 p-4 sm:p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 sm:mb-6">
+              <div>
+                <h2 className="text-lg sm:text-xl font-bold text-stone-800">Deal Tracker</h2>
+                <p className="text-stone-500 text-xs sm:text-sm">Track purchases, sales, and margins</p>
+              </div>
+              <div className="flex gap-2">
+                <select
+                  value={dealFilter}
+                  onChange={(e) => setDealFilter(e.target.value)}
+                  className="border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400 bg-stone-50/50"
+                >
+                  <option value="all">All Time</option>
+                  <option value="thisMonth">This Month</option>
+                  <option value="thisQuarter">This Quarter</option>
+                </select>
+                <button
+                  onClick={() => { closeDealForm(); setShowDealForm(true); }}
+                  className="bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 transition-colors flex items-center gap-2 text-sm font-medium"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  New Deal
+                </button>
+              </div>
+            </div>
+
+            {/* Deals Table */}
+            {getFilteredDeals().length === 0 ? (
+              <div className="text-center py-8 sm:py-12 text-stone-500">
+                <svg className="w-12 h-12 mx-auto mb-3 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                </svg>
+                <p className="font-medium text-stone-600">No deals tracked yet</p>
+                <p className="text-sm">Click "New Deal" to start tracking your purchases and sales.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-amber-200">
+                      <th className="text-left py-2 px-3 font-medium text-stone-600">Date</th>
+                      <th className="text-left py-2 px-3 font-medium text-stone-600">Source</th>
+                      <th className="text-left py-2 px-3 font-medium text-stone-600">Product</th>
+                      <th className="text-right py-2 px-3 font-medium text-stone-600">Qty</th>
+                      <th className="text-right py-2 px-3 font-medium text-stone-600">Cost</th>
+                      <th className="text-right py-2 px-3 font-medium text-stone-600">Sell</th>
+                      <th className="text-right py-2 px-3 font-medium text-stone-600">Margin</th>
+                      <th className="text-right py-2 px-3 font-medium text-stone-600">Profit</th>
+                      <th className="text-center py-2 px-3 font-medium text-stone-600">Status</th>
+                      <th className="py-2 px-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {getFilteredDeals().map((deal) => {
+                      const metrics = calculateDealMetrics(deal);
+                      return (
+                        <tr key={deal.id} className="border-b border-amber-100 hover:bg-amber-50/50">
+                          <td className="py-2 px-3 text-stone-600">{new Date(deal.deal_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
+                          <td className="py-2 px-3 font-medium text-stone-800">{deal.source}</td>
+                          <td className="py-2 px-3 text-stone-700 max-w-[150px] truncate">{deal.product}</td>
+                          <td className="py-2 px-3 text-right text-stone-600">{Number(deal.quantity).toLocaleString()}</td>
+                          <td className="py-2 px-3 text-right text-stone-600">${deal.cost_per_unit}</td>
+                          <td className="py-2 px-3 text-right text-stone-800 font-medium">${deal.sell_price}</td>
+                          <td className="py-2 px-3 text-right">
+                            <span className={`font-medium ${metrics.margin >= 30 ? 'text-emerald-600' : metrics.margin >= 20 ? 'text-amber-600' : 'text-stone-600'}`}>
+                              {metrics.margin.toFixed(1)}%
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 text-right font-semibold text-emerald-600">${metrics.profit.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}</td>
+                          <td className="py-2 px-3 text-center">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                              deal.status === 'closed' ? 'bg-emerald-100 text-emerald-700' :
+                              deal.status === 'cancelled' ? 'bg-rose-100 text-rose-700' :
+                              'bg-amber-100 text-amber-700'
+                            }`}>
+                              {deal.status}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3">
+                            <div className="flex gap-1 justify-end">
+                              <button onClick={() => startEditDeal(deal)} className="p-1 text-amber-600 hover:text-amber-700">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                </svg>
+                              </button>
+                              <button onClick={() => deleteDeal(deal.id)} className="p-1 text-rose-500 hover:text-rose-600">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {deals.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-amber-200 flex justify-between items-center text-sm text-stone-500">
+                <span>{deals.filter(d => d.status === 'pending').length} pending • {deals.filter(d => d.status === 'closed').length} closed</span>
+                <button onClick={loadDeals} className="text-amber-600 hover:text-amber-700 font-medium">Refresh</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Deal Form Modal */}
+      {showDealForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-4 border-b border-amber-200 flex justify-between items-center sticky top-0 bg-white">
+              <h3 className="text-lg font-bold text-stone-800">{editingDeal ? 'Edit Deal' : 'New Deal'}</h3>
+              <button onClick={closeDealForm} className="text-stone-400 hover:text-stone-600 p-2">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {/* Source & Product */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-stone-700 mb-1">Source *</label>
+                  <input
+                    type="text"
+                    value={dealForm.source}
+                    onChange={(e) => setDealForm({ ...dealForm, source: e.target.value })}
+                    className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400"
+                    placeholder="e.g. Lewisco"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-stone-700 mb-1">Deal Date</label>
+                  <input
+                    type="date"
+                    value={dealForm.dealDate}
+                    onChange={(e) => setDealForm({ ...dealForm, dealDate: e.target.value })}
+                    className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1">Product *</label>
+                <input
+                  type="text"
+                  value={dealForm.product}
+                  onChange={(e) => setDealForm({ ...dealForm, product: e.target.value })}
+                  className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400"
+                  placeholder="e.g. Campbell's Chunky Soup"
+                />
+              </div>
+
+              {/* Quantity */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-stone-700 mb-1">Quantity</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={dealForm.quantity}
+                    onChange={(e) => setDealForm({ ...dealForm, quantity: e.target.value })}
+                    className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400"
+                    placeholder="e.g. 500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-stone-700 mb-1">Unit</label>
+                  <select
+                    value={dealForm.unit}
+                    onChange={(e) => setDealForm({ ...dealForm, unit: e.target.value })}
+                    className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400"
+                  >
+                    <option value="cases">Cases</option>
+                    <option value="pallets">Pallets</option>
+                    <option value="units">Units</option>
+                    <option value="truckloads">Truckloads</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Cost & Sell Price */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-stone-700 mb-1">Cost per {dealForm.unit.replace(/s$/, '')}</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500">$</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={dealForm.costPerUnit}
+                      onChange={(e) => setDealForm({ ...dealForm, costPerUnit: e.target.value })}
+                      className="w-full border border-amber-200 rounded-lg pl-7 pr-3 py-2 text-sm focus:ring-2 focus:ring-amber-400"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-stone-700 mb-1">Sell Price per {dealForm.unit.replace(/s$/, '')}</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500">$</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={dealForm.sellPrice}
+                      onChange={(e) => setDealForm({ ...dealForm, sellPrice: e.target.value })}
+                      className="w-full border border-amber-200 rounded-lg pl-7 pr-3 py-2 text-sm focus:ring-2 focus:ring-amber-400"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Margin Presets */}
+              {dealForm.costPerUnit && (
+                <div>
+                  <label className="block text-sm font-medium text-stone-700 mb-2">Quick Margin Presets</label>
+                  <div className="flex flex-wrap gap-2">
+                    {marginPresets.filter(p => p.margin).map((preset) => {
+                      const cost = parseFloat(dealForm.costPerUnit) || 0;
+                      const price = (cost / (1 - preset.margin / 100)).toFixed(2);
+                      return (
+                        <button
+                          key={preset.name}
+                          type="button"
+                          onClick={() => applyMarginPreset(preset)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors bg-${preset.color}-100 text-${preset.color}-700 hover:bg-${preset.color}-200`}
+                        >
+                          {preset.name} → ${price}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Live Margin Preview */}
+              {dealForm.costPerUnit && dealForm.sellPrice && (
+                <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-200">
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div>
+                      <p className="text-xs text-emerald-600">Margin</p>
+                      <p className="text-lg font-bold text-emerald-700">
+                        {(((parseFloat(dealForm.sellPrice) - parseFloat(dealForm.costPerUnit)) / parseFloat(dealForm.sellPrice)) * 100).toFixed(1)}%
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-emerald-600">Profit/Unit</p>
+                      <p className="text-lg font-bold text-emerald-700">
+                        ${(parseFloat(dealForm.sellPrice) - parseFloat(dealForm.costPerUnit)).toFixed(2)}
+                      </p>
+                    </div>
+                    {dealForm.quantity && (
+                      <div>
+                        <p className="text-xs text-emerald-600">Total Profit</p>
+                        <p className="text-lg font-bold text-emerald-700">
+                          ${((parseFloat(dealForm.sellPrice) - parseFloat(dealForm.costPerUnit)) * parseFloat(dealForm.quantity)).toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Status */}
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1">Status</label>
+                <div className="flex gap-2">
+                  {['pending', 'closed', 'cancelled'].map((status) => (
+                    <button
+                      key={status}
+                      type="button"
+                      onClick={() => setDealForm({ ...dealForm, status })}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium capitalize transition-colors ${
+                        dealForm.status === status
+                          ? status === 'closed' ? 'bg-emerald-600 text-white' :
+                            status === 'cancelled' ? 'bg-rose-600 text-white' :
+                            'bg-amber-600 text-white'
+                          : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                      }`}
+                    >
+                      {status}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1">Notes</label>
+                <textarea
+                  value={dealForm.notes}
+                  onChange={(e) => setDealForm({ ...dealForm, notes: e.target.value })}
+                  rows={2}
+                  className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400"
+                  placeholder="Optional notes about this deal..."
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={closeDealForm}
+                  className="flex-1 px-4 py-2.5 border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors font-medium text-stone-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveDeal}
+                  disabled={!dealForm.source || !dealForm.product}
+                  className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {editingDeal ? 'Save Changes' : 'Add Deal'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
