@@ -869,9 +869,10 @@ Prestige Global Distributors
     let subject = template.subject;
     let body = template.body;
     Object.entries(emailVars).forEach(([key, value]) => {
-      const placeholder = `{{${key}}}`;
-      subject = subject.replace(new RegExp(placeholder.replace(/[{}]/g, '\\$&'), 'g'), value || `[${key}]`);
-      body = body.replace(new RegExp(placeholder.replace(/[{}]/g, '\\$&'), 'g'), value || `[${key}]`);
+      const placeholder = '{{' + key + '}}';
+      const replacement = value || '[' + key + ']';
+      while (subject.includes(placeholder)) subject = subject.replace(placeholder, replacement);
+      while (body.includes(placeholder)) body = body.replace(placeholder, replacement);
     });
     return { subject, body };
   };
