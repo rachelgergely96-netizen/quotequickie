@@ -892,6 +892,164 @@ Prestige Global Distributors
     window.open(`mailto:${toEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank');
   };
 
+  // ============ INVOICE GENERATOR ============
+  const [invoices, setInvoices] = useState([]);
+  const [showInvoicePreview, setShowInvoicePreview] = useState(false);
+  const [currentInvoice, setCurrentInvoice] = useState(null);
+  const [invoiceCustomer, setInvoiceCustomer] = useState({
+    company: '',
+    address1: '',
+    address2: '',
+    email: '',
+    phone: ''
+  });
+
+  // Generate invoice number
+  const generateInvoiceNumber = () => {
+    const year = new Date().getFullYear();
+    const month = String(new Date().getMonth() + 1).padStart(2, '0');
+    const random = Math.floor(1000 + Math.random() * 9000);
+    return `INV-${year}${month}-${random}`;
+  };
+
+  // Load invoices from Supabase
+  const loadInvoices = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('invoices')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setInvoices(data || []);
+    } catch (err) {
+      console.error('Failed to load invoices:', err);
+      const saved = localStorage.getItem('pgd-invoices');
+      if (saved) setInvoices(JSON.parse(saved));
+    }
+  };
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadInvoices();
+    }
+  }, [isAuthenticated]);
+
+  // Create invoice from deal
+  const createInvoiceFromDeal = (deal) => {
+    const metrics = calculateDealMetrics(deal);
+    const invoice = {
+      invoiceNumber: generateInvoiceNumber(),
+      dealId: deal.id,
+      date: new Date().toISOString().split('T')[0],
+      dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      customer: invoiceCustomer,
+      items: [{
+        description: deal.product,
+        quantity: parseFloat(deal.quantity) || 0,
+        unit: deal.unit || 'cases',
+        unitPrice: parseFloat(deal.sell_price) || 0,
+        total: metrics.totalRevenue
+      }],
+      subtotal: metrics.totalRevenue,
+      tax: 0,
+      total: metrics.totalRevenue,
+      notes: deal.notes || '',
+      status: 'unpaid',
+      source: deal.source
+    };
+    setCurrentInvoice(invoice);
+    setShowInvoicePreview(true);
+  };
+
+  // Save invoice
+  const saveInvoice = async () => {
+    if (!currentInvoice) return;
+
+    const invoiceData = {
+      invoice_number: currentInvoice.invoiceNumber,
+      deal_id: currentInvoice.dealId,
+      invoice_date: currentInvoice.date,
+      due_date: currentInvoice.dueDate,
+      customer_info: currentInvoice.customer,
+      items: currentInvoice.items,
+      subtotal: currentInvoice.subtotal,
+      tax: currentInvoice.tax,
+      total: currentInvoice.total,
+      notes: currentInvoice.notes,
+      status: currentInvoice.status
+    };
+
+    try {
+      const { error } = await supabase.from('invoices').insert([{ ...invoiceData, created_at: new Date().toISOString() }]);
+      if (error) throw error;
+      await loadInvoices();
+      setShowInvoicePreview(false);
+      setCurrentInvoice(null);
+      setInvoiceCustomer({ company: '', address1: '', address2: '', email: '', phone: '' });
+    } catch (err) {
+      console.error('Failed to save invoice:', err);
+      const newInvoices = [...invoices, { ...invoiceData, id: Date.now() }];
+      setInvoices(newInvoices);
+      localStorage.setItem('pgd-invoices', JSON.stringify(newInvoices));
+      setShowInvoicePreview(false);
+      setCurrentInvoice(null);
+      setInvoiceCustomer({ company: '', address1: '', address2: '', email: '', phone: '' });
+    }
+  };
+
+  // Delete invoice
+  const deleteInvoice = async (id) => {
+    if (!confirm('Delete this invoice?')) return;
+    try {
+      const { error } = await supabase.from('invoices').delete().eq('id', id);
+      if (error) throw error;
+      await loadInvoices();
+    } catch (err) {
+      console.error('Failed to delete invoice:', err);
+      const newInvoices = invoices.filter(i => i.id !== id);
+      setInvoices(newInvoices);
+      localStorage.setItem('pgd-invoices', JSON.stringify(newInvoices));
+    }
+  };
+
+  // Update invoice status
+  const updateInvoiceStatus = async (id, status) => {
+    try {
+      const { error } = await supabase.from('invoices').update({ status }).eq('id', id);
+      if (error) throw error;
+      await loadInvoices();
+    } catch (err) {
+      console.error('Failed to update invoice:', err);
+      const newInvoices = invoices.map(i => i.id === id ? { ...i, status } : i);
+      setInvoices(newInvoices);
+      localStorage.setItem('pgd-invoices', JSON.stringify(newInvoices));
+    }
+  };
+
+  // Print invoice
+  const printInvoice = () => {
+    window.print();
+  };
+
+  // View saved invoice
+  const viewInvoice = (invoice) => {
+    setCurrentInvoice({
+      invoiceNumber: invoice.invoice_number,
+      dealId: invoice.deal_id,
+      date: invoice.invoice_date,
+      dueDate: invoice.due_date,
+      customer: invoice.customer_info,
+      items: invoice.items,
+      subtotal: invoice.subtotal,
+      tax: invoice.tax,
+      total: invoice.total,
+      notes: invoice.notes,
+      status: invoice.status,
+      id: invoice.id
+    });
+    setShowInvoicePreview(true);
+  };
+
   const useTemplateWithContact = (contact) => {
     setEmailVars(prev => ({
       ...prev,
@@ -2180,6 +2338,13 @@ View quote: ${generateShareLink()}
                 <span className="hidden sm:inline">Emails</span>
                 <span className="sm:hidden">✉</span>
               </button>
+              <button
+                onClick={() => setActiveTab('invoices')}
+                className={`py-2 sm:py-3 px-1.5 sm:px-4 font-medium border-b-2 transition-colors text-xs sm:text-base whitespace-nowrap ${activeTab === 'invoices' ? 'border-amber-600 text-amber-700' : 'border-transparent text-stone-500 hover:text-stone-700'}`}
+              >
+                <span className="hidden sm:inline">Invoices</span>
+                <span className="sm:hidden">📄</span>
+              </button>
               <span className="border-r border-amber-200 mx-1"></span>
               <button
                 onClick={handleLogout}
@@ -3081,6 +3246,17 @@ View quote: ${generateShareLink()}
                           </td>
                           <td className="py-2 px-3">
                             <div className="flex gap-1 justify-end">
+                              {deal.status === 'closed' && (
+                                <button
+                                  onClick={() => createInvoiceFromDeal(deal)}
+                                  className="p-1 text-blue-600 hover:text-blue-700"
+                                  title="Create Invoice"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                </button>
+                              )}
                               <button onClick={() => startEditDeal(deal)} className="p-1 text-amber-600 hover:text-amber-700">
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -3313,6 +3489,359 @@ View quote: ${generateShareLink()}
                   Open in Email App
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invoices Tab */}
+      {activeTab === 'invoices' && (
+        <div className="max-w-4xl mx-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
+          {/* Invoice Stats */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-white/80 rounded-lg shadow-sm border border-amber-100 p-3 sm:p-4">
+              <div className="text-xs text-stone-500 mb-1">Total Invoices</div>
+              <div className="text-lg sm:text-xl font-bold text-stone-800">{invoices.length}</div>
+            </div>
+            <div className="bg-white/80 rounded-lg shadow-sm border border-emerald-200 p-3 sm:p-4">
+              <div className="text-xs text-stone-500 mb-1">Paid</div>
+              <div className="text-lg sm:text-xl font-bold text-emerald-600">{invoices.filter(i => i.status === 'paid').length}</div>
+            </div>
+            <div className="bg-white/80 rounded-lg shadow-sm border border-amber-200 p-3 sm:p-4">
+              <div className="text-xs text-stone-500 mb-1">Unpaid</div>
+              <div className="text-lg sm:text-xl font-bold text-amber-600">{invoices.filter(i => i.status === 'unpaid').length}</div>
+            </div>
+            <div className="bg-white/80 rounded-lg shadow-sm border border-blue-200 p-3 sm:p-4">
+              <div className="text-xs text-stone-500 mb-1">Total Value</div>
+              <div className="text-lg sm:text-xl font-bold text-blue-600">
+                ${invoices.reduce((sum, i) => sum + (parseFloat(i.total) || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </div>
+            </div>
+          </div>
+
+          {/* Create Invoice Section */}
+          <div className="bg-white/80 rounded-lg shadow-sm border border-amber-100 p-4 sm:p-6">
+            <h2 className="text-lg font-bold text-stone-800 mb-1">Create Invoice from Deal</h2>
+            <p className="text-stone-500 text-xs sm:text-sm mb-4">Select a closed deal to generate an invoice</p>
+
+            <div className="space-y-3">
+              {deals.filter(d => d.status === 'closed').length === 0 ? (
+                <div className="text-center py-8 text-stone-400">
+                  <p>No closed deals yet</p>
+                  <p className="text-xs mt-1">Close a deal in the Deals tab to create an invoice</p>
+                </div>
+              ) : (
+                deals.filter(d => d.status === 'closed').slice(0, 5).map(deal => {
+                  const metrics = calculateDealMetrics(deal);
+                  const hasInvoice = invoices.some(i => i.deal_id === deal.id);
+                  return (
+                    <div key={deal.id} className="flex items-center justify-between p-3 border border-stone-200 rounded-lg hover:bg-stone-50">
+                      <div>
+                        <div className="font-medium text-stone-800">{deal.product}</div>
+                        <div className="text-xs text-stone-500">
+                          {deal.source} • {deal.quantity} {deal.unit} • ${metrics.totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </div>
+                      </div>
+                      {hasInvoice ? (
+                        <span className="px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-medium">Invoice Created</span>
+                      ) : (
+                        <button
+                          onClick={() => createInvoiceFromDeal(deal)}
+                          className="px-3 py-1.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-xs font-medium"
+                        >
+                          Create Invoice
+                        </button>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Invoice List */}
+          <div className="bg-white/80 rounded-lg shadow-sm border border-amber-100 p-4 sm:p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold text-stone-800">Invoice History</h2>
+              <button onClick={loadInvoices} className="text-amber-600 hover:text-amber-700 font-medium text-sm">Refresh</button>
+            </div>
+
+            {invoices.length === 0 ? (
+              <div className="text-center py-8 text-stone-400">
+                <p>No invoices yet</p>
+                <p className="text-xs mt-1">Create your first invoice from a closed deal</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {invoices.map(invoice => (
+                  <div key={invoice.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 border border-stone-200 rounded-lg hover:bg-stone-50 gap-2">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-medium text-stone-800">{invoice.invoice_number}</span>
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                          invoice.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                        }`}>
+                          {invoice.status === 'paid' ? 'Paid' : 'Unpaid'}
+                        </span>
+                      </div>
+                      <div className="text-xs text-stone-500 mt-1">
+                        {invoice.customer_info?.company || 'No customer'} •
+                        ${parseFloat(invoice.total).toLocaleString('en-US', { minimumFractionDigits: 2 })} •
+                        Due: {new Date(invoice.due_date).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => viewInvoice(invoice)}
+                        className="px-3 py-1.5 text-xs bg-stone-100 text-stone-700 rounded-lg hover:bg-stone-200 transition-colors font-medium"
+                      >
+                        View
+                      </button>
+                      {invoice.status === 'unpaid' && (
+                        <button
+                          onClick={() => updateInvoiceStatus(invoice.id, 'paid')}
+                          className="px-3 py-1.5 text-xs bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition-colors font-medium"
+                        >
+                          Mark Paid
+                        </button>
+                      )}
+                      {invoice.status === 'paid' && (
+                        <button
+                          onClick={() => updateInvoiceStatus(invoice.id, 'unpaid')}
+                          className="px-3 py-1.5 text-xs bg-amber-100 text-amber-700 rounded-lg hover:bg-amber-200 transition-colors font-medium"
+                        >
+                          Mark Unpaid
+                        </button>
+                      )}
+                      <button
+                        onClick={() => deleteInvoice(invoice.id)}
+                        className="px-3 py-1.5 text-xs bg-rose-100 text-rose-700 rounded-lg hover:bg-rose-200 transition-colors font-medium"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Invoice Preview Modal */}
+      {showInvoicePreview && currentInvoice && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-4 border-b border-amber-200 flex justify-between items-center sticky top-0 bg-white print:hidden">
+              <h3 className="text-lg font-bold text-stone-800">Invoice Preview</h3>
+              <button onClick={() => { setShowInvoicePreview(false); setCurrentInvoice(null); }} className="text-stone-400 hover:text-stone-600 p-2">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Customer Info Form (only show when creating new invoice) */}
+            {!currentInvoice.id && (
+              <div className="p-4 border-b border-stone-200 bg-stone-50 print:hidden">
+                <h4 className="font-medium text-stone-700 mb-3">Customer Information</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-stone-600 mb-1">Company Name *</label>
+                    <input
+                      type="text"
+                      value={invoiceCustomer.company}
+                      onChange={(e) => {
+                        setInvoiceCustomer({ ...invoiceCustomer, company: e.target.value });
+                        setCurrentInvoice({ ...currentInvoice, customer: { ...invoiceCustomer, company: e.target.value } });
+                      }}
+                      className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400"
+                      placeholder="Customer company name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-600 mb-1">Email</label>
+                    <input
+                      type="email"
+                      value={invoiceCustomer.email}
+                      onChange={(e) => {
+                        setInvoiceCustomer({ ...invoiceCustomer, email: e.target.value });
+                        setCurrentInvoice({ ...currentInvoice, customer: { ...invoiceCustomer, email: e.target.value } });
+                      }}
+                      className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400"
+                      placeholder="billing@company.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-600 mb-1">Address Line 1</label>
+                    <input
+                      type="text"
+                      value={invoiceCustomer.address1}
+                      onChange={(e) => {
+                        setInvoiceCustomer({ ...invoiceCustomer, address1: e.target.value });
+                        setCurrentInvoice({ ...currentInvoice, customer: { ...invoiceCustomer, address1: e.target.value } });
+                      }}
+                      className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400"
+                      placeholder="123 Main St"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-600 mb-1">Address Line 2</label>
+                    <input
+                      type="text"
+                      value={invoiceCustomer.address2}
+                      onChange={(e) => {
+                        setInvoiceCustomer({ ...invoiceCustomer, address2: e.target.value });
+                        setCurrentInvoice({ ...currentInvoice, customer: { ...invoiceCustomer, address2: e.target.value } });
+                      }}
+                      className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400"
+                      placeholder="City, State ZIP"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Invoice Document */}
+            <div className="p-6 sm:p-8" id="invoice-print">
+              {/* Header */}
+              <div className="flex justify-between items-start mb-8">
+                <div>
+                  <div className="flex items-center gap-3 mb-2">
+                    <CompanyLogo size={50} />
+                    <div>
+                      <h1 className="text-xl font-bold text-stone-800">{companyInfo.name}</h1>
+                      <p className="text-xs text-stone-500">{companyInfo.address1}</p>
+                      <p className="text-xs text-stone-500">{companyInfo.address2}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <h2 className="text-2xl font-bold text-amber-600">INVOICE</h2>
+                  <p className="font-mono text-sm text-stone-600">{currentInvoice.invoiceNumber}</p>
+                </div>
+              </div>
+
+              {/* Bill To & Invoice Details */}
+              <div className="grid grid-cols-2 gap-8 mb-8">
+                <div>
+                  <h3 className="text-xs font-semibold text-stone-500 uppercase mb-2">Bill To</h3>
+                  <p className="font-medium text-stone-800">{currentInvoice.customer?.company || '[Customer Company]'}</p>
+                  {currentInvoice.customer?.address1 && <p className="text-sm text-stone-600">{currentInvoice.customer.address1}</p>}
+                  {currentInvoice.customer?.address2 && <p className="text-sm text-stone-600">{currentInvoice.customer.address2}</p>}
+                  {currentInvoice.customer?.email && <p className="text-sm text-stone-600">{currentInvoice.customer.email}</p>}
+                </div>
+                <div className="text-right">
+                  <div className="space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-stone-500">Invoice Date:</span>
+                      <span className="text-sm font-medium">{new Date(currentInvoice.date).toLocaleDateString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-stone-500">Due Date:</span>
+                      <span className="text-sm font-medium">{new Date(currentInvoice.dueDate).toLocaleDateString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-stone-500">Status:</span>
+                      <span className={`text-sm font-medium ${currentInvoice.status === 'paid' ? 'text-emerald-600' : 'text-amber-600'}`}>
+                        {currentInvoice.status === 'paid' ? 'PAID' : 'UNPAID'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Line Items */}
+              <div className="mb-8">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b-2 border-stone-200">
+                      <th className="text-left py-2 text-xs font-semibold text-stone-500 uppercase">Description</th>
+                      <th className="text-right py-2 text-xs font-semibold text-stone-500 uppercase">Qty</th>
+                      <th className="text-right py-2 text-xs font-semibold text-stone-500 uppercase">Unit Price</th>
+                      <th className="text-right py-2 text-xs font-semibold text-stone-500 uppercase">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {currentInvoice.items?.map((item, idx) => (
+                      <tr key={idx} className="border-b border-stone-100">
+                        <td className="py-3 text-sm text-stone-800">{item.description}</td>
+                        <td className="py-3 text-sm text-stone-600 text-right">{item.quantity} {item.unit}</td>
+                        <td className="py-3 text-sm text-stone-600 text-right">${parseFloat(item.unitPrice).toFixed(2)}</td>
+                        <td className="py-3 text-sm font-medium text-stone-800 text-right">${parseFloat(item.total).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Totals */}
+              <div className="flex justify-end mb-8">
+                <div className="w-64">
+                  <div className="flex justify-between py-2 border-b border-stone-200">
+                    <span className="text-sm text-stone-600">Subtotal</span>
+                    <span className="text-sm font-medium">${parseFloat(currentInvoice.subtotal).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b border-stone-200">
+                    <span className="text-sm text-stone-600">Tax</span>
+                    <span className="text-sm font-medium">${parseFloat(currentInvoice.tax || 0).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between py-3 bg-amber-50 px-3 -mx-3 rounded">
+                    <span className="font-semibold text-stone-800">Total Due</span>
+                    <span className="font-bold text-lg text-amber-600">${parseFloat(currentInvoice.total).toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Notes */}
+              {currentInvoice.notes && (
+                <div className="mb-8">
+                  <h3 className="text-xs font-semibold text-stone-500 uppercase mb-2">Notes</h3>
+                  <p className="text-sm text-stone-600">{currentInvoice.notes}</p>
+                </div>
+              )}
+
+              {/* Footer */}
+              <div className="border-t border-stone-200 pt-4 text-center text-xs text-stone-400">
+                <p>Thank you for your business!</p>
+                <p className="mt-1">{companyInfo.name} • {companyInfo.phone}</p>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="p-4 border-t border-stone-200 flex gap-3 print:hidden">
+              {!currentInvoice.id ? (
+                <>
+                  <button
+                    onClick={() => { setShowInvoicePreview(false); setCurrentInvoice(null); }}
+                    className="flex-1 px-4 py-2.5 border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={saveInvoice}
+                    disabled={!currentInvoice.customer?.company}
+                    className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Save Invoice
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => { setShowInvoicePreview(false); setCurrentInvoice(null); }}
+                    className="flex-1 px-4 py-2.5 border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors font-medium"
+                  >
+                    Close
+                  </button>
+                  <button
+                    onClick={printInvoice}
+                    className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium"
+                  >
+                    Print Invoice
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
