@@ -2343,7 +2343,7 @@ View quote: ${generateShareLink()}
                 className={`py-2 sm:py-3 px-1.5 sm:px-4 font-medium border-b-2 transition-colors text-xs sm:text-base whitespace-nowrap ${activeTab === 'invoices' ? 'border-amber-600 text-amber-700' : 'border-transparent text-stone-500 hover:text-stone-700'}`}
               >
                 <span className="hidden sm:inline">Invoices</span>
-                <span className="sm:hidden">📄</span>
+                <span className="sm:hidden">Inv</span>
               </button>
               <span className="border-r border-amber-200 mx-1"></span>
               <button
