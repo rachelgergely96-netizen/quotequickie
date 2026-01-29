@@ -1022,130 +1022,197 @@ Prestige Global Distributors
   const downloadInvoicePDF = async () => {
     if (!currentInvoice) return;
 
-    // Get logo as base64 for embedding in PDF
-    const logoData = await getLogoBase64();
+    // Load jsPDF from CDN if not already loaded
+    if (!window.jspdf) {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+      document.head.appendChild(script);
+      await new Promise((resolve, reject) => {
+        script.onload = resolve;
+        script.onerror = reject;
+        setTimeout(reject, 10000);
+      });
+    }
 
-    // Create a new window with clean invoice for printing/PDF
-    const printWindow = window.open('', '_blank', 'width=800,height=600');
-    if (!printWindow) {
-      alert('Please allow popups to download PDF');
+    if (!window.jspdf) {
+      alert('Failed to load PDF library');
       return;
     }
 
-    const invoiceHTML = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Invoice ${currentInvoice.invoiceNumber}</title>
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px; color: #1c1917; max-width: 800px; margin: 0 auto; }
-          .header { display: flex; justify-content: space-between; margin-bottom: 40px; align-items: flex-start; }
-          .company-info { display: flex; align-items: flex-start; gap: 15px; }
-          .company-logo { width: 60px; height: 60px; object-fit: contain; }
-          .company-name { font-size: 18px; font-weight: bold; color: #1c1917; }
-          .company-address { font-size: 11px; color: #78716c; }
-          .invoice-title { font-size: 28px; font-weight: bold; color: #d97706; text-align: right; }
-          .invoice-number { font-family: monospace; font-size: 13px; color: #57534e; text-align: right; }
-          .bill-section { display: flex; justify-content: space-between; margin-bottom: 40px; }
-          .section-title { font-size: 11px; font-weight: 600; color: #78716c; text-transform: uppercase; margin-bottom: 8px; }
-          .customer-name { font-weight: 500; color: #1c1917; }
-          .customer-detail { font-size: 13px; color: #57534e; }
-          .details-right { text-align: right; }
-          .details-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; gap: 20px; }
-          .details-label { color: #78716c; }
-          .details-value { font-weight: 500; }
-          .status-paid { color: #059669; }
-          .status-unpaid { color: #d97706; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-          th { text-align: left; padding: 10px 0; font-size: 11px; font-weight: 600; color: #78716c; text-transform: uppercase; border-bottom: 2px solid #e7e5e4; }
-          th.right { text-align: right; }
-          td { padding: 12px 0; font-size: 13px; border-bottom: 1px solid #f5f5f4; }
-          td.right { text-align: right; }
-          .totals { display: flex; justify-content: flex-end; margin-bottom: 30px; }
-          .totals-box { width: 250px; }
-          .total-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e7e5e4; font-size: 13px; }
-          .total-row.grand { background: #fef3c7; padding: 12px; margin: 0 -12px; border-radius: 6px; border: none; margin-top: 8px; }
-          .grand-label { font-weight: 600; color: #1c1917; }
-          .grand-value { font-weight: bold; font-size: 18px; color: #d97706; }
-          .notes { margin-bottom: 30px; }
-          .notes-title { font-size: 11px; font-weight: 600; color: #78716c; text-transform: uppercase; margin-bottom: 8px; }
-          .notes-text { font-size: 13px; color: #57534e; }
-          .footer { border-top: 1px solid #e7e5e4; padding-top: 20px; text-align: center; font-size: 11px; color: #a8a29e; }
-          .print-instructions { background: #fef3c7; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-size: 13px; }
-          .print-instructions strong { color: #92400e; }
-          @media print { .print-instructions { display: none; } body { padding: 20px; } }
-        </style>
-      </head>
-      <body>
-        <div class="print-instructions">
-          <strong>To save as PDF:</strong> In the print dialog, select <strong>"Save as PDF"</strong> or <strong>"Microsoft Print to PDF"</strong> as your printer, then click Save/Print.
-        </div>
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    let yPos = 15;
 
-        <div class="header">
-          <div class="company-info">
-            ${logoData ? '<img src="' + logoData + '" class="company-logo" alt="Logo" />' : ''}
-            <div>
-              <div class="company-name">${companyInfo.name}</div>
-              <div class="company-address">${companyInfo.address1}</div>
-              <div class="company-address">${companyInfo.address2}</div>
-              <div class="company-address">${companyInfo.phone}</div>
-            </div>
-          </div>
-          <div>
-            <div class="invoice-title">INVOICE</div>
-            <div class="invoice-number">${currentInvoice.invoiceNumber}</div>
-          </div>
-        </div>
+    // Add logo
+    try {
+      const logoData = await getLogoBase64();
+      if (logoData) {
+        doc.addImage(logoData, 'PNG', 14, yPos, 25, 25);
+      }
+    } catch (e) {
+      console.log('Logo loading failed:', e);
+    }
 
-        <div class="bill-section">
-          <div>
-            <div class="section-title">Bill To</div>
-            <div class="customer-name">${currentInvoice.customer?.company || '[Customer Company]'}</div>
-            ${currentInvoice.customer?.address1 ? '<div class="customer-detail">' + currentInvoice.customer.address1 + '</div>' : ''}
-            ${currentInvoice.customer?.address2 ? '<div class="customer-detail">' + currentInvoice.customer.address2 + '</div>' : ''}
-            ${currentInvoice.customer?.email ? '<div class="customer-detail">' + currentInvoice.customer.email + '</div>' : ''}
-          </div>
-          <div class="details-right">
-            <div class="details-row"><span class="details-label">Invoice Date:</span><span class="details-value">${new Date(currentInvoice.date).toLocaleDateString()}</span></div>
-            <div class="details-row"><span class="details-label">Due Date:</span><span class="details-value">${new Date(currentInvoice.dueDate).toLocaleDateString()}</span></div>
-            <div class="details-row"><span class="details-label">Status:</span><span class="details-value ${currentInvoice.status === 'paid' ? 'status-paid' : 'status-unpaid'}">${currentInvoice.status === 'paid' ? 'PAID' : 'UNPAID'}</span></div>
-          </div>
-        </div>
+    // Company info (next to logo)
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text(companyInfo.name, 45, yPos + 8);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(120, 113, 108);
+    doc.text(companyInfo.address1, 45, yPos + 14);
+    doc.text(companyInfo.address2, 45, yPos + 19);
+    doc.text(companyInfo.phone, 45, yPos + 24);
 
-        <table>
-          <thead>
-            <tr><th>Description</th><th class="right">Qty</th><th class="right">Unit Price</th><th class="right">Total</th></tr>
-          </thead>
-          <tbody>
-            ${(currentInvoice.items || []).map(item =>
-              '<tr><td>' + item.description + '</td><td class="right">' + item.quantity + ' ' + item.unit + '</td><td class="right">$' + parseFloat(item.unitPrice).toFixed(2) + '</td><td class="right" style="font-weight:500;">$' + parseFloat(item.total).toFixed(2) + '</td></tr>'
-            ).join('')}
-          </tbody>
-        </table>
+    // Invoice title (right side)
+    doc.setFontSize(24);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(217, 119, 6);
+    doc.text('INVOICE', pageWidth - 14, yPos + 10, { align: 'right' });
+    doc.setFontSize(10);
+    doc.setTextColor(87, 83, 78);
+    doc.text(currentInvoice.invoiceNumber, pageWidth - 14, yPos + 18, { align: 'right' });
 
-        <div class="totals">
-          <div class="totals-box">
-            <div class="total-row"><span>Subtotal</span><span>$${parseFloat(currentInvoice.subtotal).toFixed(2)}</span></div>
-            <div class="total-row"><span>Tax</span><span>$${parseFloat(currentInvoice.tax || 0).toFixed(2)}</span></div>
-            <div class="total-row grand"><span class="grand-label">Total Due</span><span class="grand-value">$${parseFloat(currentInvoice.total).toFixed(2)}</span></div>
-          </div>
-        </div>
+    yPos += 40;
 
-        ${currentInvoice.notes ? '<div class="notes"><div class="notes-title">Notes</div><div class="notes-text">' + currentInvoice.notes + '</div></div>' : ''}
+    // Bill To section
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(120, 113, 108);
+    doc.text('BILL TO', 14, yPos);
+    yPos += 6;
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(28, 25, 23);
+    doc.text(currentInvoice.customer?.company || '[Customer]', 14, yPos);
+    yPos += 5;
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(87, 83, 78);
+    if (currentInvoice.customer?.address1) {
+      doc.text(currentInvoice.customer.address1, 14, yPos);
+      yPos += 4;
+    }
+    if (currentInvoice.customer?.address2) {
+      doc.text(currentInvoice.customer.address2, 14, yPos);
+      yPos += 4;
+    }
+    if (currentInvoice.customer?.email) {
+      doc.text(currentInvoice.customer.email, 14, yPos);
+    }
 
-        <div class="footer">
-          <p>Thank you for your business!</p>
-          <p>${companyInfo.name} • ${companyInfo.phone}</p>
-        </div>
+    // Invoice details (right side)
+    let detailsY = yPos - 15;
+    doc.setFontSize(9);
+    doc.setTextColor(120, 113, 108);
+    doc.text('Invoice Date:', pageWidth - 60, detailsY);
+    doc.setTextColor(28, 25, 23);
+    doc.setFont('helvetica', 'bold');
+    doc.text(new Date(currentInvoice.date).toLocaleDateString(), pageWidth - 14, detailsY, { align: 'right' });
+    detailsY += 6;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(120, 113, 108);
+    doc.text('Due Date:', pageWidth - 60, detailsY);
+    doc.setTextColor(28, 25, 23);
+    doc.setFont('helvetica', 'bold');
+    doc.text(new Date(currentInvoice.dueDate).toLocaleDateString(), pageWidth - 14, detailsY, { align: 'right' });
+    detailsY += 6;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(120, 113, 108);
+    doc.text('Status:', pageWidth - 60, detailsY);
+    doc.setFont('helvetica', 'bold');
+    if (currentInvoice.status === 'paid') {
+      doc.setTextColor(5, 150, 105);
+      doc.text('PAID', pageWidth - 14, detailsY, { align: 'right' });
+    } else {
+      doc.setTextColor(217, 119, 6);
+      doc.text('UNPAID', pageWidth - 14, detailsY, { align: 'right' });
+    }
 
-        <script>window.onload = function() { setTimeout(function() { window.print(); }, 500); };<\/script>
-      </body>
-      </html>
-    `;
+    yPos += 15;
 
-    printWindow.document.write(invoiceHTML);
-    printWindow.document.close();
+    // Table header
+    doc.setFillColor(245, 245, 244);
+    doc.rect(14, yPos, pageWidth - 28, 8, 'F');
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(120, 113, 108);
+    doc.text('DESCRIPTION', 16, yPos + 5.5);
+    doc.text('QTY', 100, yPos + 5.5);
+    doc.text('UNIT PRICE', 130, yPos + 5.5);
+    doc.text('TOTAL', pageWidth - 16, yPos + 5.5, { align: 'right' });
+    yPos += 12;
+
+    // Table rows
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(28, 25, 23);
+    doc.setFontSize(9);
+    (currentInvoice.items || []).forEach(item => {
+      doc.text(item.description || '', 16, yPos);
+      doc.text(`${item.quantity} ${item.unit}`, 100, yPos);
+      doc.text(`$${parseFloat(item.unitPrice).toFixed(2)}`, 130, yPos);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`$${parseFloat(item.total).toFixed(2)}`, pageWidth - 16, yPos, { align: 'right' });
+      doc.setFont('helvetica', 'normal');
+      doc.setDrawColor(229, 231, 235);
+      doc.line(14, yPos + 3, pageWidth - 14, yPos + 3);
+      yPos += 10;
+    });
+
+    yPos += 5;
+
+    // Totals
+    const totalsX = pageWidth - 80;
+    doc.setFontSize(9);
+    doc.setTextColor(87, 83, 78);
+    doc.text('Subtotal', totalsX, yPos);
+    doc.text(`$${parseFloat(currentInvoice.subtotal).toFixed(2)}`, pageWidth - 16, yPos, { align: 'right' });
+    yPos += 6;
+    doc.text('Tax', totalsX, yPos);
+    doc.text(`$${parseFloat(currentInvoice.tax || 0).toFixed(2)}`, pageWidth - 16, yPos, { align: 'right' });
+    yPos += 8;
+
+    // Total due box
+    doc.setFillColor(254, 243, 199);
+    doc.roundedRect(totalsX - 5, yPos - 4, pageWidth - totalsX + 5 - 10, 14, 2, 2, 'F');
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(28, 25, 23);
+    doc.text('Total Due', totalsX, yPos + 5);
+    doc.setFontSize(14);
+    doc.setTextColor(217, 119, 6);
+    doc.text(`$${parseFloat(currentInvoice.total).toFixed(2)}`, pageWidth - 16, yPos + 5, { align: 'right' });
+
+    yPos += 25;
+
+    // Notes
+    if (currentInvoice.notes) {
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(120, 113, 108);
+      doc.text('NOTES', 14, yPos);
+      yPos += 5;
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(87, 83, 78);
+      doc.setFontSize(9);
+      const noteLines = doc.splitTextToSize(currentInvoice.notes, pageWidth - 28);
+      doc.text(noteLines, 14, yPos);
+      yPos += noteLines.length * 5 + 10;
+    }
+
+    // Footer
+    doc.setDrawColor(229, 231, 235);
+    doc.line(14, yPos, pageWidth - 14, yPos);
+    yPos += 10;
+    doc.setFontSize(9);
+    doc.setTextColor(168, 162, 158);
+    doc.text('Thank you for your business!', pageWidth / 2, yPos, { align: 'center' });
+    yPos += 5;
+    doc.text(`${companyInfo.name} • ${companyInfo.phone}`, pageWidth / 2, yPos, { align: 'center' });
+
+    // Save the PDF
+    doc.save(`${currentInvoice.invoiceNumber}.pdf`);
   };
 
   // Email invoice with PDF - opens PDF for saving, then email
