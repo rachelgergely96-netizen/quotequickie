@@ -1019,8 +1019,11 @@ Prestige Global Distributors
   // Download invoice as PDF (opens print dialog - select "Save as PDF" as destination)
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
-  const downloadInvoicePDF = () => {
+  const downloadInvoicePDF = async () => {
     if (!currentInvoice) return;
+
+    // Get logo as base64 for embedding in PDF
+    const logoData = await getLogoBase64();
 
     // Create a new window with clean invoice for printing/PDF
     const printWindow = window.open('', '_blank', 'width=800,height=600');
@@ -1037,7 +1040,9 @@ Prestige Global Distributors
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px; color: #1c1917; max-width: 800px; margin: 0 auto; }
-          .header { display: flex; justify-content: space-between; margin-bottom: 40px; }
+          .header { display: flex; justify-content: space-between; margin-bottom: 40px; align-items: flex-start; }
+          .company-info { display: flex; align-items: flex-start; gap: 15px; }
+          .company-logo { width: 60px; height: 60px; object-fit: contain; }
           .company-name { font-size: 18px; font-weight: bold; color: #1c1917; }
           .company-address { font-size: 11px; color: #78716c; }
           .invoice-title { font-size: 28px; font-weight: bold; color: #d97706; text-align: right; }
@@ -1078,11 +1083,14 @@ Prestige Global Distributors
         </div>
 
         <div class="header">
-          <div>
-            <div class="company-name">${companyInfo.name}</div>
-            <div class="company-address">${companyInfo.address1}</div>
-            <div class="company-address">${companyInfo.address2}</div>
-            <div class="company-address">${companyInfo.phone}</div>
+          <div class="company-info">
+            ${logoData ? '<img src="' + logoData + '" class="company-logo" alt="Logo" />' : ''}
+            <div>
+              <div class="company-name">${companyInfo.name}</div>
+              <div class="company-address">${companyInfo.address1}</div>
+              <div class="company-address">${companyInfo.address2}</div>
+              <div class="company-address">${companyInfo.phone}</div>
+            </div>
           </div>
           <div>
             <div class="invoice-title">INVOICE</div>
