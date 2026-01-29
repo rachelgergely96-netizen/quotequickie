@@ -445,6 +445,90 @@ export default function App() {
     });
   };
 
+  // Bulk import state
+  const [showBulkImport, setShowBulkImport] = useState(false);
+  const [bulkImportText, setBulkImportText] = useState('');
+  const [bulkImportPreview, setBulkImportPreview] = useState([]);
+
+  // Parse bulk import text
+  const parseBulkImport = (text) => {
+    const lines = text.trim().split('\n').filter(line => line.trim());
+    const parsed = [];
+
+    const categoryMap = {
+      'diverter': 'diverter', 'liquidator': 'diverter', 'diverter/liquidator': 'diverter',
+      'manufacturer': 'manufacturer', 'mfr': 'manufacturer',
+      'broker': 'broker',
+      'auction': 'auction', 'auction platform': 'auction',
+      'salvage': 'salvage', 'salvage store': 'salvage',
+      'distributor': 'distributor', 'c-store distributor': 'distributor',
+      'grocery': 'grocery', 'grocery chain': 'grocery',
+      'cstore': 'cstore', 'c-store': 'cstore', 'c-store chain': 'cstore'
+    };
+
+    for (const line of lines) {
+      const parts = line.split(' - ').map(p => p.trim());
+      if (parts.length >= 3) {
+        const company = parts[0];
+        const typeCategory = parts[1].toLowerCase();
+        const contactInfo = parts[2];
+        const notes = parts[3] || '';
+
+        let type = 'source';
+        let category = 'other_source';
+
+        if (typeCategory.includes('customer') || typeCategory.includes('buyer')) {
+          type = 'customer';
+          category = 'other_customer';
+        }
+
+        const catParts = typeCategory.split('/').map(p => p.trim());
+        const catKey = catParts[catParts.length - 1];
+        if (categoryMap[catKey]) {
+          category = categoryMap[catKey];
+          if (['salvage', 'distributor', 'grocery', 'cstore', 'other_customer'].includes(category)) {
+            type = 'customer';
+          } else {
+            type = 'source';
+          }
+        }
+
+        const isEmail = contactInfo.includes('@');
+        const phone = isEmail ? '' : contactInfo;
+        const email = isEmail ? contactInfo : '';
+
+        parsed.push({ company, type, category, phone, email, notes, contact_name: '' });
+      }
+    }
+    return parsed;
+  };
+
+  const handleBulkImportChange = (text) => {
+    setBulkImportText(text);
+    setBulkImportPreview(parseBulkImport(text));
+  };
+
+  const executeBulkImport = async () => {
+    if (bulkImportPreview.length === 0) return;
+    try {
+      const contactsToInsert = bulkImportPreview.map(c => ({ ...c, created_at: new Date().toISOString() }));
+      const { error } = await supabase.from('contacts').insert(contactsToInsert);
+      if (error) throw error;
+      await loadContacts();
+      setShowBulkImport(false);
+      setBulkImportText('');
+      setBulkImportPreview([]);
+    } catch (err) {
+      console.error('Bulk import failed:', err);
+      const newContacts = [...contacts, ...bulkImportPreview.map((c, i) => ({ ...c, id: Date.now() + i }))];
+      setContacts(newContacts);
+      localStorage.setItem('pgd-contacts', JSON.stringify(newContacts));
+      setShowBulkImport(false);
+      setBulkImportText('');
+      setBulkImportPreview([]);
+    }
+  };
+
   const startEditContact = (contact) => {
     setEditingContact(contact);
     setContactForm({
@@ -2366,15 +2450,26 @@ View quote: ${generateShareLink()}
                 <h2 className="text-lg sm:text-xl font-bold text-stone-800">Contact Directory</h2>
                 <p className="text-stone-500 text-xs sm:text-sm">Sources & customers for quick access</p>
               </div>
-              <button
-                onClick={() => { resetContactForm(); setEditingContact(null); setShowContactForm(true); }}
-                className="bg-amber-600 text-white px-4 sm:px-5 py-2 sm:py-2.5 rounded-lg hover:bg-amber-700 transition-colors flex items-center justify-center gap-2 text-sm sm:text-base"
-              >
-                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Add Contact
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowBulkImport(true)}
+                  className="bg-stone-100 text-stone-700 px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg hover:bg-stone-200 transition-colors flex items-center justify-center gap-2 text-sm sm:text-base"
+                >
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  <span className="hidden sm:inline">Bulk Import</span>
+                </button>
+                <button
+                  onClick={() => { resetContactForm(); setEditingContact(null); setShowContactForm(true); }}
+                  className="bg-amber-600 text-white px-4 sm:px-5 py-2 sm:py-2.5 rounded-lg hover:bg-amber-700 transition-colors flex items-center justify-center gap-2 text-sm sm:text-base"
+                >
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add Contact
+                </button>
+              </div>
             </div>
 
             {/* Search and Filter */}
@@ -2621,6 +2716,81 @@ View quote: ${generateShareLink()}
                   className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {editingContact ? 'Save Changes' : 'Add Contact'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Import Modal */}
+      {showBulkImport && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-amber-200 flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-bold text-stone-800">Bulk Import Contacts</h3>
+                <p className="text-xs text-stone-500">Paste multiple contacts, one per line</p>
+              </div>
+              <button onClick={() => { setShowBulkImport(false); setBulkImportText(''); setBulkImportPreview([]); }} className="text-stone-400 hover:text-stone-600 p-2">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4 flex-1 overflow-y-auto">
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-2">
+                  Format: <code className="bg-stone-100 px-1 rounded text-xs">Company - Type / Category - Phone or Email</code>
+                </label>
+                <textarea
+                  value={bulkImportText}
+                  onChange={(e) => handleBulkImportChange(e.target.value)}
+                  rows={6}
+                  className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                  placeholder={`Lewisco Holdings - Source / Diverter - (917) 210-9395
+WorldFoods - Source / Diverter - jeff@worldfoodsinc.com
+Miami Depot - Customer / Salvage - (786) 337-8334
+HLA - Customer / Distributor - (800) 325-2512`}
+                />
+              </div>
+
+              <div className="text-xs text-stone-500 bg-stone-50 p-3 rounded-lg">
+                <p className="font-medium mb-1">Supported categories:</p>
+                <p><span className="text-emerald-600">Sources:</span> Diverter, Manufacturer, Broker, Auction</p>
+                <p><span className="text-blue-600">Customers:</span> Salvage, Distributor, Grocery, C-Store</p>
+              </div>
+
+              {bulkImportPreview.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium text-stone-700 mb-2">Preview ({bulkImportPreview.length} contacts):</p>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {bulkImportPreview.map((c, i) => (
+                      <div key={i} className={`text-xs p-2 rounded ${c.type === 'source' ? 'bg-emerald-50 border border-emerald-200' : 'bg-blue-50 border border-blue-200'}`}>
+                        <span className="font-medium">{c.company}</span>
+                        <span className="text-stone-500"> • {c.type} / {c.category}</span>
+                        {c.phone && <span className="text-stone-600"> • {c.phone}</span>}
+                        {c.email && <span className="text-stone-600"> • {c.email}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => { setShowBulkImport(false); setBulkImportText(''); setBulkImportPreview([]); }}
+                  className="flex-1 px-4 py-2.5 border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors font-medium text-stone-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={executeBulkImport}
+                  disabled={bulkImportPreview.length === 0}
+                  className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Import {bulkImportPreview.length} Contact{bulkImportPreview.length !== 1 ? 's' : ''}
                 </button>
               </div>
             </div>
