@@ -13,6 +13,24 @@ const CompanyLogo = ({ size = 120 }) => (
 // Logo URL for use in other places
 const logoUrl = '/logo.png';
 
+// Convert logo to base64 for PDF embedding
+const getLogoBase64 = () => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'Anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => resolve(null);
+    img.src = '/logo.png';
+  });
+};
+
 export default function App() {
   const companyInfo = {
     name: 'Prestige Global Distributors, Inc.',
@@ -1630,21 +1648,14 @@ View quote: ${generateShareLink()}
       let yPos = 15;
 
       try {
-        const canvas = document.createElement('canvas');
-        canvas.width = 120;
-        canvas.height = 120;
-        const ctx = canvas.getContext('2d');
-        const img = new Image();
-        img.src = getLogoBase64();
-        await new Promise((resolve) => {
-          img.onload = resolve;
-          setTimeout(resolve, 500);
-        });
-        ctx.drawImage(img, 0, 0, 120, 120);
-        const logoData = canvas.toDataURL('image/png');
-        doc.addImage(logoData, 'PNG', (pageWidth - 30) / 2, yPos, 30, 30);
-      } catch (e) {}
-      yPos += 35;
+        const logoData = await getLogoBase64();
+        if (logoData) {
+          doc.addImage(logoData, 'PNG', (pageWidth - 40) / 2, yPos, 40, 40);
+        }
+      } catch (e) {
+        console.log('Logo loading failed:', e);
+      }
+      yPos += 45;
 
       doc.setFontSize(16);
       doc.setFont('helvetica', 'bold');
