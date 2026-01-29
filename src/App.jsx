@@ -124,6 +124,38 @@ export default function App() {
   const [showLibrary, setShowLibrary] = useState(false);
   const [librarySearch, setLibrarySearch] = useState('');
 
+  // Contact Directory state
+  const [contacts, setContacts] = useState([]);
+  const [showContactForm, setShowContactForm] = useState(false);
+  const [contactSearch, setContactSearch] = useState('');
+  const [contactFilter, setContactFilter] = useState('all'); // all, source, customer
+  const [editingContact, setEditingContact] = useState(null);
+  const [contactForm, setContactForm] = useState({
+    company: '',
+    contactName: '',
+    phone: '',
+    email: '',
+    type: 'source', // source or customer
+    category: '', // diverter, manufacturer, salvage, distributor, grocery, etc.
+    notes: ''
+  });
+
+  // Contact category options
+  const sourceCategories = [
+    { value: 'diverter', label: 'Diverter/Liquidator' },
+    { value: 'manufacturer', label: 'Manufacturer' },
+    { value: 'broker', label: 'Broker' },
+    { value: 'auction', label: 'Auction Platform' },
+    { value: 'other_source', label: 'Other Source' }
+  ];
+  const customerCategories = [
+    { value: 'salvage', label: 'Salvage Store' },
+    { value: 'distributor', label: 'C-Store Distributor' },
+    { value: 'grocery', label: 'Grocery Chain' },
+    { value: 'cstore', label: 'C-Store Chain' },
+    { value: 'other_customer', label: 'Other Customer' }
+  ];
+
   // PIN Authentication for internal access
   const PGD_PIN = '8601'; // Prestige Global Distributors PIN
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -329,6 +361,112 @@ export default function App() {
       localStorage.setItem('pgd-product-library', JSON.stringify(productLibrary));
     }
   }, [productLibrary]);
+
+  // Load contacts from Supabase on mount
+  const loadContacts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('*')
+        .order('company', { ascending: true });
+      if (error) throw error;
+      setContacts(data || []);
+    } catch (err) {
+      console.error('Failed to load contacts:', err);
+      // Fall back to localStorage
+      const saved = localStorage.getItem('pgd-contacts');
+      if (saved) setContacts(JSON.parse(saved));
+    }
+  };
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadContacts();
+    }
+  }, [isAuthenticated]);
+
+  // Save contact to Supabase
+  const saveContact = async (contact) => {
+    try {
+      if (editingContact) {
+        const { error } = await supabase
+          .from('contacts')
+          .update(contact)
+          .eq('id', editingContact.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('contacts')
+          .insert([{ ...contact, created_at: new Date().toISOString() }]);
+        if (error) throw error;
+      }
+      await loadContacts();
+      setShowContactForm(false);
+      setEditingContact(null);
+      resetContactForm();
+    } catch (err) {
+      console.error('Failed to save contact:', err);
+      // Fall back to localStorage
+      const newContacts = editingContact
+        ? contacts.map(c => c.id === editingContact.id ? { ...contact, id: editingContact.id } : c)
+        : [...contacts, { ...contact, id: Date.now() }];
+      setContacts(newContacts);
+      localStorage.setItem('pgd-contacts', JSON.stringify(newContacts));
+      setShowContactForm(false);
+      setEditingContact(null);
+      resetContactForm();
+    }
+  };
+
+  // Delete contact
+  const deleteContact = async (id) => {
+    if (!confirm('Delete this contact?')) return;
+    try {
+      const { error } = await supabase.from('contacts').delete().eq('id', id);
+      if (error) throw error;
+      await loadContacts();
+    } catch (err) {
+      console.error('Failed to delete contact:', err);
+      const newContacts = contacts.filter(c => c.id !== id);
+      setContacts(newContacts);
+      localStorage.setItem('pgd-contacts', JSON.stringify(newContacts));
+    }
+  };
+
+  const resetContactForm = () => {
+    setContactForm({
+      company: '',
+      contactName: '',
+      phone: '',
+      email: '',
+      type: 'source',
+      category: '',
+      notes: ''
+    });
+  };
+
+  const startEditContact = (contact) => {
+    setEditingContact(contact);
+    setContactForm({
+      company: contact.company || '',
+      contactName: contact.contact_name || '',
+      phone: contact.phone || '',
+      email: contact.email || '',
+      type: contact.type || 'source',
+      category: contact.category || '',
+      notes: contact.notes || ''
+    });
+    setShowContactForm(true);
+  };
+
+  // Filter contacts based on search and type
+  const filteredContacts = contacts.filter(c => {
+    const matchesSearch = !contactSearch ||
+      (c.company?.toLowerCase().includes(contactSearch.toLowerCase()) ||
+       c.contact_name?.toLowerCase().includes(contactSearch.toLowerCase()));
+    const matchesFilter = contactFilter === 'all' || c.type === contactFilter;
+    return matchesSearch && matchesFilter;
+  });
 
   // Product Library functions
   const saveProductToLibrary = (product) => {
@@ -1565,6 +1703,13 @@ View quote: ${generateShareLink()}
                 <span className="hidden sm:inline">History</span>
                 <span className="sm:hidden">Saved</span>
               </button>
+              <button
+                onClick={() => setActiveTab('contacts')}
+                className={`py-2 sm:py-3 px-1.5 sm:px-4 font-medium border-b-2 transition-colors text-xs sm:text-base whitespace-nowrap ${activeTab === 'contacts' ? 'border-amber-600 text-amber-700' : 'border-transparent text-stone-500 hover:text-stone-700'}`}
+              >
+                <span className="hidden sm:inline">Contacts</span>
+                <span className="sm:hidden">CRM</span>
+              </button>
               <span className="border-r border-amber-200 mx-1"></span>
               <button
                 onClick={handleLogout}
@@ -2208,6 +2353,277 @@ View quote: ${generateShareLink()}
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Contacts Directory */}
+      {activeTab === 'contacts' && (
+        <div className="max-w-4xl mx-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
+          <div className="bg-white/80 rounded-lg shadow-sm border border-amber-100 p-4 sm:p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 sm:mb-6">
+              <div>
+                <h2 className="text-lg sm:text-xl font-bold text-stone-800">Contact Directory</h2>
+                <p className="text-stone-500 text-xs sm:text-sm">Sources & customers for quick access</p>
+              </div>
+              <button
+                onClick={() => { resetContactForm(); setEditingContact(null); setShowContactForm(true); }}
+                className="bg-amber-600 text-white px-4 sm:px-5 py-2 sm:py-2.5 rounded-lg hover:bg-amber-700 transition-colors flex items-center justify-center gap-2 text-sm sm:text-base"
+              >
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add Contact
+              </button>
+            </div>
+
+            {/* Search and Filter */}
+            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+              <div className="flex-1">
+                <input
+                  type="text"
+                  placeholder="Search contacts..."
+                  value={contactSearch}
+                  onChange={(e) => setContactSearch(e.target.value)}
+                  className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400 focus:border-amber-400 bg-stone-50/50"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setContactFilter('all')}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${contactFilter === 'all' ? 'bg-amber-600 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setContactFilter('source')}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${contactFilter === 'source' ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
+                >
+                  Sources
+                </button>
+                <button
+                  onClick={() => setContactFilter('customer')}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${contactFilter === 'customer' ? 'bg-blue-600 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
+                >
+                  Customers
+                </button>
+              </div>
+            </div>
+
+            {/* Contacts List */}
+            {filteredContacts.length === 0 ? (
+              <div className="text-center py-8 sm:py-12 text-stone-500">
+                <svg className="w-12 h-12 mx-auto mb-3 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+                <p className="font-medium text-stone-600">No contacts yet</p>
+                <p className="text-sm">Add sources (suppliers) and customers to build your directory.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredContacts.map((contact) => (
+                  <div key={contact.id} className={`rounded-lg p-3 sm:p-4 transition-colors border ${contact.type === 'source' ? 'bg-emerald-50/60 border-emerald-200 hover:bg-emerald-50' : 'bg-blue-50/60 border-blue-200 hover:bg-blue-50'}`}>
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-semibold text-stone-800 truncate">{contact.company}</h3>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${contact.type === 'source' ? 'bg-emerald-200 text-emerald-800' : 'bg-blue-200 text-blue-800'}`}>
+                            {contact.type === 'source' ? 'Source' : 'Customer'}
+                          </span>
+                        </div>
+                        {contact.contact_name && <p className="text-sm text-stone-600">{contact.contact_name}</p>}
+                        <p className="text-xs text-stone-500 capitalize mt-1">
+                          {contact.category?.replace(/_/g, ' ').replace('other source', 'Other').replace('other customer', 'Other')}
+                        </p>
+                        {contact.notes && <p className="text-xs text-stone-400 mt-1 italic">{contact.notes}</p>}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {contact.phone && (
+                          <a
+                            href={`tel:${contact.phone}`}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs sm:text-sm font-medium"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                            </svg>
+                            Call
+                          </a>
+                        )}
+                        {contact.email && (
+                          <a
+                            href={`mailto:${contact.email}`}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs sm:text-sm font-medium"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                            Email
+                          </a>
+                        )}
+                        <button
+                          onClick={() => startEditContact(contact)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-100 text-amber-700 rounded-lg hover:bg-amber-200 transition-colors text-xs sm:text-sm font-medium"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => deleteContact(contact.id)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-100 text-rose-600 rounded-lg hover:bg-rose-200 transition-colors text-xs sm:text-sm font-medium"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {contacts.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-amber-200 flex justify-between items-center text-sm text-stone-500">
+                <span>{contacts.filter(c => c.type === 'source').length} sources • {contacts.filter(c => c.type === 'customer').length} customers</span>
+                <button onClick={loadContacts} className="text-amber-600 hover:text-amber-700 font-medium">Refresh</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Contact Form Modal */}
+      {showContactForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-4 border-b border-amber-200 flex justify-between items-center sticky top-0 bg-white">
+              <h3 className="text-lg font-bold text-stone-800">{editingContact ? 'Edit Contact' : 'Add New Contact'}</h3>
+              <button onClick={() => { setShowContactForm(false); setEditingContact(null); resetContactForm(); }} className="text-stone-400 hover:text-stone-600 p-2">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {/* Type Selection */}
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-2">Contact Type *</label>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setContactForm({ ...contactForm, type: 'source', category: '' })}
+                    className={`flex-1 py-3 rounded-lg font-medium transition-colors ${contactForm.type === 'source' ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
+                  >
+                    Source (Supplier)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setContactForm({ ...contactForm, type: 'customer', category: '' })}
+                    className={`flex-1 py-3 rounded-lg font-medium transition-colors ${contactForm.type === 'customer' ? 'bg-blue-600 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
+                  >
+                    Customer (Buyer)
+                  </button>
+                </div>
+              </div>
+
+              {/* Category */}
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1">Category *</label>
+                <select
+                  value={contactForm.category}
+                  onChange={(e) => setContactForm({ ...contactForm, category: e.target.value })}
+                  className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                >
+                  <option value="">Select category...</option>
+                  {(contactForm.type === 'source' ? sourceCategories : customerCategories).map(cat => (
+                    <option key={cat.value} value={cat.value}>{cat.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Company */}
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1">Company Name *</label>
+                <input
+                  type="text"
+                  value={contactForm.company}
+                  onChange={(e) => setContactForm({ ...contactForm, company: e.target.value })}
+                  className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                  placeholder="e.g. Lewisco Holdings"
+                />
+              </div>
+
+              {/* Contact Name */}
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1">Contact Name</label>
+                <input
+                  type="text"
+                  value={contactForm.contactName}
+                  onChange={(e) => setContactForm({ ...contactForm, contactName: e.target.value })}
+                  className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                  placeholder="e.g. John Smith"
+                />
+              </div>
+
+              {/* Phone */}
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1">Phone</label>
+                <input
+                  type="tel"
+                  value={contactForm.phone}
+                  onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })}
+                  className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                  placeholder="e.g. (917) 210-9395"
+                />
+              </div>
+
+              {/* Email */}
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={contactForm.email}
+                  onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
+                  className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                  placeholder="e.g. contact@company.com"
+                />
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1">Notes</label>
+                <textarea
+                  value={contactForm.notes}
+                  onChange={(e) => setContactForm({ ...contactForm, notes: e.target.value })}
+                  rows={2}
+                  className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                  placeholder="e.g. Best for canned goods, Florida-based"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => { setShowContactForm(false); setEditingContact(null); resetContactForm(); }}
+                  className="flex-1 px-4 py-2.5 border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors font-medium text-stone-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => saveContact({
+                    company: contactForm.company,
+                    contact_name: contactForm.contactName,
+                    phone: contactForm.phone,
+                    email: contactForm.email,
+                    type: contactForm.type,
+                    category: contactForm.category,
+                    notes: contactForm.notes
+                  })}
+                  disabled={!contactForm.company || !contactForm.category}
+                  className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {editingContact ? 'Save Changes' : 'Add Contact'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
