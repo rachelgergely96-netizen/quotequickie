@@ -797,7 +797,7 @@ Prestige Global Distributors
 I have a great deal on {{productName}}:
 
 Product: {{productName}}
-Price: ${{price}} per case
+Price: $PRICE per case
 Quantity Available: {{quantity}} cases
 Valid Until: {{validUntil}}
 
@@ -854,7 +854,7 @@ Thank you for your order!
 Details:
 - Product: {{productName}}
 - Quantity: {{quantity}} cases
-- Price: ${{price}} per case
+- Price: $PRICE per case
 
 I'll follow up with pickup/delivery details shortly.
 
@@ -874,6 +874,9 @@ Prestige Global Distributors
       while (subject.includes(placeholder)) subject = subject.replace(placeholder, replacement);
       while (body.includes(placeholder)) body = body.replace(placeholder, replacement);
     });
+    // Handle special PRICE placeholder (to avoid ${{ JS interpolation issue)
+    const priceVal = emailVars.price || '[price]';
+    while (body.includes('$PRICE')) body = body.replace('$PRICE', '$' + priceVal);
     return { subject, body };
   };
 
