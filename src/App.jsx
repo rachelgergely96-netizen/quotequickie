@@ -1031,78 +1031,147 @@ Prestige Global Distributors
     window.print();
   };
 
-  // Download invoice as PDF
+  // Download invoice as PDF (opens print dialog - select "Save as PDF" as destination)
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
-  const downloadInvoicePDF = async () => {
-    const element = document.getElementById('invoice-print');
-    if (!element) {
-      alert('Could not find invoice to generate PDF');
-      return;
-    }
-
-    // Check if html2pdf is loaded from CDN
-    if (typeof window.html2pdf === 'undefined') {
-      alert('PDF library not loaded. Please refresh the page and try again.');
-      return;
-    }
-
-    setIsGeneratingPDF(true);
-
-    try {
-      const opt = {
-        margin: 0.5,
-        filename: `${currentInvoice.invoiceNumber}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, logging: false },
-        jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
-      };
-
-      await window.html2pdf().set(opt).from(element).save();
-    } catch (error) {
-      console.error('PDF generation error:', error);
-      alert('Error generating PDF. Please try using Print instead.');
-    } finally {
-      setIsGeneratingPDF(false);
-    }
-  };
-
-  // Email invoice with PDF attachment
-  const emailInvoiceWithPDF = async () => {
+  const downloadInvoicePDF = () => {
     if (!currentInvoice) return;
 
-    // Check if html2pdf is loaded
-    if (typeof window.html2pdf === 'undefined') {
-      alert('PDF library not loaded. Please refresh and try again.');
+    // Create a new window with clean invoice for printing/PDF
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    if (!printWindow) {
+      alert('Please allow popups to download PDF');
       return;
     }
 
-    // First download the PDF
-    setIsGeneratingPDF(true);
-    const element = document.getElementById('invoice-print');
+    const invoiceHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Invoice ${currentInvoice.invoiceNumber}</title>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px; color: #1c1917; max-width: 800px; margin: 0 auto; }
+          .header { display: flex; justify-content: space-between; margin-bottom: 40px; }
+          .company-name { font-size: 18px; font-weight: bold; color: #1c1917; }
+          .company-address { font-size: 11px; color: #78716c; }
+          .invoice-title { font-size: 28px; font-weight: bold; color: #d97706; text-align: right; }
+          .invoice-number { font-family: monospace; font-size: 13px; color: #57534e; text-align: right; }
+          .bill-section { display: flex; justify-content: space-between; margin-bottom: 40px; }
+          .section-title { font-size: 11px; font-weight: 600; color: #78716c; text-transform: uppercase; margin-bottom: 8px; }
+          .customer-name { font-weight: 500; color: #1c1917; }
+          .customer-detail { font-size: 13px; color: #57534e; }
+          .details-right { text-align: right; }
+          .details-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; gap: 20px; }
+          .details-label { color: #78716c; }
+          .details-value { font-weight: 500; }
+          .status-paid { color: #059669; }
+          .status-unpaid { color: #d97706; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+          th { text-align: left; padding: 10px 0; font-size: 11px; font-weight: 600; color: #78716c; text-transform: uppercase; border-bottom: 2px solid #e7e5e4; }
+          th.right { text-align: right; }
+          td { padding: 12px 0; font-size: 13px; border-bottom: 1px solid #f5f5f4; }
+          td.right { text-align: right; }
+          .totals { display: flex; justify-content: flex-end; margin-bottom: 30px; }
+          .totals-box { width: 250px; }
+          .total-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e7e5e4; font-size: 13px; }
+          .total-row.grand { background: #fef3c7; padding: 12px; margin: 0 -12px; border-radius: 6px; border: none; margin-top: 8px; }
+          .grand-label { font-weight: 600; color: #1c1917; }
+          .grand-value { font-weight: bold; font-size: 18px; color: #d97706; }
+          .notes { margin-bottom: 30px; }
+          .notes-title { font-size: 11px; font-weight: 600; color: #78716c; text-transform: uppercase; margin-bottom: 8px; }
+          .notes-text { font-size: 13px; color: #57534e; }
+          .footer { border-top: 1px solid #e7e5e4; padding-top: 20px; text-align: center; font-size: 11px; color: #a8a29e; }
+          .print-instructions { background: #fef3c7; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-size: 13px; }
+          .print-instructions strong { color: #92400e; }
+          @media print { .print-instructions { display: none; } body { padding: 20px; } }
+        </style>
+      </head>
+      <body>
+        <div class="print-instructions">
+          <strong>To save as PDF:</strong> In the print dialog, select <strong>"Save as PDF"</strong> or <strong>"Microsoft Print to PDF"</strong> as your printer, then click Save/Print.
+        </div>
 
-    try {
-      const opt = {
-        margin: 0.5,
-        filename: `${currentInvoice.invoiceNumber}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, logging: false },
-        jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
-      };
+        <div class="header">
+          <div>
+            <div class="company-name">${companyInfo.name}</div>
+            <div class="company-address">${companyInfo.address1}</div>
+            <div class="company-address">${companyInfo.address2}</div>
+            <div class="company-address">${companyInfo.phone}</div>
+          </div>
+          <div>
+            <div class="invoice-title">INVOICE</div>
+            <div class="invoice-number">${currentInvoice.invoiceNumber}</div>
+          </div>
+        </div>
 
-      // Download the PDF first
-      await window.html2pdf().set(opt).from(element).save();
+        <div class="bill-section">
+          <div>
+            <div class="section-title">Bill To</div>
+            <div class="customer-name">${currentInvoice.customer?.company || '[Customer Company]'}</div>
+            ${currentInvoice.customer?.address1 ? '<div class="customer-detail">' + currentInvoice.customer.address1 + '</div>' : ''}
+            ${currentInvoice.customer?.address2 ? '<div class="customer-detail">' + currentInvoice.customer.address2 + '</div>' : ''}
+            ${currentInvoice.customer?.email ? '<div class="customer-detail">' + currentInvoice.customer.email + '</div>' : ''}
+          </div>
+          <div class="details-right">
+            <div class="details-row"><span class="details-label">Invoice Date:</span><span class="details-value">${new Date(currentInvoice.date).toLocaleDateString()}</span></div>
+            <div class="details-row"><span class="details-label">Due Date:</span><span class="details-value">${new Date(currentInvoice.dueDate).toLocaleDateString()}</span></div>
+            <div class="details-row"><span class="details-label">Status:</span><span class="details-value ${currentInvoice.status === 'paid' ? 'status-paid' : 'status-unpaid'}">${currentInvoice.status === 'paid' ? 'PAID' : 'UNPAID'}</span></div>
+          </div>
+        </div>
 
-      // Then open email client
-      setTimeout(() => {
-        const customerEmail = currentInvoice.customer?.email || '';
-        const subject = `Invoice ${currentInvoice.invoiceNumber} from Prestige Global Distributors`;
+        <table>
+          <thead>
+            <tr><th>Description</th><th class="right">Qty</th><th class="right">Unit Price</th><th class="right">Total</th></tr>
+          </thead>
+          <tbody>
+            ${(currentInvoice.items || []).map(item =>
+              '<tr><td>' + item.description + '</td><td class="right">' + item.quantity + ' ' + item.unit + '</td><td class="right">$' + parseFloat(item.unitPrice).toFixed(2) + '</td><td class="right" style="font-weight:500;">$' + parseFloat(item.total).toFixed(2) + '</td></tr>'
+            ).join('')}
+          </tbody>
+        </table>
 
-        const itemsList = currentInvoice.items?.map(item =>
-          `- ${item.description}: ${item.quantity} ${item.unit} x $${parseFloat(item.unitPrice).toFixed(2)} = $${parseFloat(item.total).toFixed(2)}`
-        ).join('\n') || '';
+        <div class="totals">
+          <div class="totals-box">
+            <div class="total-row"><span>Subtotal</span><span>$${parseFloat(currentInvoice.subtotal).toFixed(2)}</span></div>
+            <div class="total-row"><span>Tax</span><span>$${parseFloat(currentInvoice.tax || 0).toFixed(2)}</span></div>
+            <div class="total-row grand"><span class="grand-label">Total Due</span><span class="grand-value">$${parseFloat(currentInvoice.total).toFixed(2)}</span></div>
+          </div>
+        </div>
 
-        const body = `Dear ${currentInvoice.customer?.company || 'Customer'},
+        ${currentInvoice.notes ? '<div class="notes"><div class="notes-title">Notes</div><div class="notes-text">' + currentInvoice.notes + '</div></div>' : ''}
+
+        <div class="footer">
+          <p>Thank you for your business!</p>
+          <p>${companyInfo.name} • ${companyInfo.phone}</p>
+        </div>
+
+        <script>window.onload = function() { setTimeout(function() { window.print(); }, 500); };<\/script>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(invoiceHTML);
+    printWindow.document.close();
+  };
+
+  // Email invoice with PDF - opens PDF for saving, then email
+  const emailInvoiceWithPDF = () => {
+    if (!currentInvoice) return;
+
+    // First open the PDF print dialog
+    downloadInvoicePDF();
+
+    // Then open email after a short delay
+    setTimeout(() => {
+      const customerEmail = currentInvoice.customer?.email || '';
+      const subject = `Invoice ${currentInvoice.invoiceNumber} from Prestige Global Distributors`;
+
+      const itemsList = currentInvoice.items?.map(item =>
+        `- ${item.description}: ${item.quantity} ${item.unit} x $${parseFloat(item.unitPrice).toFixed(2)} = $${parseFloat(item.total).toFixed(2)}`
+      ).join('\n') || '';
+
+      const body = `Dear ${currentInvoice.customer?.company || 'Customer'},
 
 Please find attached invoice ${currentInvoice.invoiceNumber}.
 
@@ -1118,7 +1187,7 @@ TOTAL DUE: $${parseFloat(currentInvoice.total).toFixed(2)}
 
 Payment Terms: Net 30
 
-Please attach the downloaded PDF file (${currentInvoice.invoiceNumber}.pdf) to this email before sending.
+IMPORTANT: Please attach the PDF you just saved to this email before sending.
 
 Thank you for your business!
 
@@ -1127,15 +1196,8 @@ John Gergely
 Prestige Global Distributors
 631-223-6615`;
 
-        window.open(`mailto:${customerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank');
-      }, 1000); // Small delay to allow PDF download to complete
-
-    } catch (error) {
-      console.error('Error:', error);
-      alert('Error generating PDF for email.');
-    } finally {
-      setIsGeneratingPDF(false);
-    }
+      window.open(`mailto:${customerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank');
+    }, 2000);
   };
 
   // Quick email without PDF (just text)
@@ -3975,17 +4037,15 @@ View quote: ${generateShareLink()}
                   <div className="flex gap-3">
                     <button
                       onClick={downloadInvoicePDF}
-                      disabled={isGeneratingPDF}
-                      className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-wait"
+                      className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
                     >
-                      {isGeneratingPDF ? 'Generating...' : 'Download PDF'}
+                      Save as PDF
                     </button>
                     <button
                       onClick={emailInvoiceWithPDF}
-                      disabled={isGeneratingPDF}
-                      className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-wait"
+                      className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium"
                     >
-                      {isGeneratingPDF ? 'Preparing...' : 'Email + PDF'}
+                      Email + PDF
                     </button>
                   </div>
                 </div>
@@ -4008,17 +4068,15 @@ View quote: ${generateShareLink()}
                   <div className="flex gap-3">
                     <button
                       onClick={downloadInvoicePDF}
-                      disabled={isGeneratingPDF}
-                      className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-wait"
+                      className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
                     >
-                      {isGeneratingPDF ? 'Generating...' : 'Download PDF'}
+                      Save as PDF
                     </button>
                     <button
                       onClick={emailInvoiceWithPDF}
-                      disabled={isGeneratingPDF}
-                      className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-wait"
+                      className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium"
                     >
-                      {isGeneratingPDF ? 'Preparing...' : 'Email + PDF'}
+                      Email + PDF
                     </button>
                   </div>
                 </div>
