@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabase';
+import html2pdf from 'html2pdf.js';
 
 // Company Logo Component
 const CompanyLogo = ({ size = 120 }) => (
@@ -1029,6 +1030,60 @@ Prestige Global Distributors
   // Print invoice
   const printInvoice = () => {
     window.print();
+  };
+
+  // Download invoice as PDF
+  const downloadInvoicePDF = () => {
+    const element = document.getElementById('invoice-print');
+    if (!element) return;
+
+    const opt = {
+      margin: 0.5,
+      filename: `${currentInvoice.invoiceNumber}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+    };
+
+    html2pdf().set(opt).from(element).save();
+  };
+
+  // Email invoice
+  const emailInvoice = () => {
+    if (!currentInvoice) return;
+
+    const customerEmail = currentInvoice.customer?.email || '';
+    const subject = `Invoice ${currentInvoice.invoiceNumber} from Prestige Global Distributors`;
+
+    const itemsList = currentInvoice.items?.map(item =>
+      `- ${item.description}: ${item.quantity} ${item.unit} x $${parseFloat(item.unitPrice).toFixed(2)} = $${parseFloat(item.total).toFixed(2)}`
+    ).join('\n') || '';
+
+    const body = `Dear ${currentInvoice.customer?.company || 'Customer'},
+
+Please find below your invoice details:
+
+INVOICE: ${currentInvoice.invoiceNumber}
+DATE: ${new Date(currentInvoice.date).toLocaleDateString()}
+DUE DATE: ${new Date(currentInvoice.dueDate).toLocaleDateString()}
+
+ITEMS:
+${itemsList}
+
+SUBTOTAL: $${parseFloat(currentInvoice.subtotal).toFixed(2)}
+TAX: $${parseFloat(currentInvoice.tax || 0).toFixed(2)}
+TOTAL DUE: $${parseFloat(currentInvoice.total).toFixed(2)}
+
+Payment Terms: Net 30
+
+Thank you for your business!
+
+Best regards,
+John Gergely
+Prestige Global Distributors
+631-223-6615`;
+
+    window.open(`mailto:${customerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank');
   };
 
   // View saved invoice
@@ -3809,38 +3864,70 @@ View quote: ${generateShareLink()}
             </div>
 
             {/* Action Buttons */}
-            <div className="p-4 border-t border-stone-200 flex gap-3 print:hidden">
+            <div className="p-4 border-t border-stone-200 print:hidden">
               {!currentInvoice.id ? (
-                <>
-                  <button
-                    onClick={() => { setShowInvoicePreview(false); setCurrentInvoice(null); }}
-                    className="flex-1 px-4 py-2.5 border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors font-medium"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={saveInvoice}
-                    disabled={!currentInvoice.customer?.company}
-                    className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Save Invoice
-                  </button>
-                </>
+                <div className="flex flex-col gap-2 w-full">
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => { setShowInvoicePreview(false); setCurrentInvoice(null); }}
+                      className="flex-1 px-4 py-2.5 border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors font-medium"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={saveInvoice}
+                      disabled={!currentInvoice.customer?.company}
+                      className="flex-1 px-4 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Save Invoice
+                    </button>
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={downloadInvoicePDF}
+                      className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                    >
+                      Download PDF
+                    </button>
+                    <button
+                      onClick={emailInvoice}
+                      className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium"
+                    >
+                      Email Invoice
+                    </button>
+                  </div>
+                </div>
               ) : (
-                <>
-                  <button
-                    onClick={() => { setShowInvoicePreview(false); setCurrentInvoice(null); }}
-                    className="flex-1 px-4 py-2.5 border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors font-medium"
-                  >
-                    Close
-                  </button>
-                  <button
-                    onClick={printInvoice}
-                    className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium"
-                  >
-                    Print Invoice
-                  </button>
-                </>
+                <div className="flex flex-col gap-2 w-full">
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => { setShowInvoicePreview(false); setCurrentInvoice(null); }}
+                      className="flex-1 px-4 py-2.5 border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors font-medium"
+                    >
+                      Close
+                    </button>
+                    <button
+                      onClick={printInvoice}
+                      className="flex-1 px-4 py-2.5 border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors font-medium"
+                    >
+                      Print
+                    </button>
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={downloadInvoicePDF}
+                      className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                    >
+                      Download PDF
+                    </button>
+                    <button
+                      onClick={emailInvoice}
+                      className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium"
+                    >
+                      Email Invoice
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </div>
