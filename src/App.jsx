@@ -709,6 +709,194 @@ export default function App() {
     return { totalRevenue, totalCost, totalProfit, avgMargin, dealCount };
   };
 
+  // ============ EMAIL TEMPLATES ============
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [emailVars, setEmailVars] = useState({
+    contactName: '', companyName: '', productName: '', quantity: '', price: '', validUntil: ''
+  });
+  const [copiedTemplate, setCopiedTemplate] = useState(null);
+
+  const emailTemplates = [
+    {
+      id: 'interested', name: 'Interested in Offer', category: 'source',
+      subject: 'Interested in {{productName}} Availability',
+      body: `Hi {{contactName}},
+
+I saw your offer on {{productName}} and I'm interested.
+
+Can you confirm:
+- Current availability
+- Best pricing for {{quantity}} cases
+- Pickup location and timing
+
+Looking forward to your response.
+
+Best regards,
+John Gergely
+Prestige Global Distributors
+631-223-6615`
+    },
+    {
+      id: 'need_info', name: 'Need More Info', category: 'source',
+      subject: 'Re: {{productName}} - Questions',
+      body: `Hi {{contactName}},
+
+Thanks for the {{productName}} offer. Before I can move forward, I need a few details:
+
+1. What are the best-by dates?
+2. First quality or salvage?
+3. Pallet configuration?
+4. FOB point?
+
+Thanks,
+John Gergely
+Prestige Global Distributors`
+    },
+    {
+      id: 'pass', name: 'Pass on Offer', category: 'source',
+      subject: 'Re: {{productName}}',
+      body: `Hi {{contactName}},
+
+Thanks for thinking of us on the {{productName}}.
+
+This one doesn't work for us right now. Please keep us in mind for future opportunities - we're always looking for canned goods, snacks, and beverages.
+
+Best,
+John Gergely
+Prestige Global Distributors`
+    },
+    {
+      id: 'new_source', name: 'New Source Intro', category: 'source',
+      subject: 'Prestige Global Distributors - Looking to Buy',
+      body: `Hi {{contactName}},
+
+My name is John Gergely with Prestige Global Distributors based in Setauket, NY.
+
+We specialize in secondary market distribution - closeouts, short-dated, discontinued, and overstock inventory. We work with salvage stores, discount grocers, and c-store distributors across the Northeast.
+
+I'd love to get on your buyer list. We're actively buying:
+- Canned goods (soups, vegetables, beans)
+- Snacks and confectionery
+- Beverages
+- General grocery
+
+What's the best way to receive your available inventory lists?
+
+Thanks,
+John Gergely
+President
+Prestige Global Distributors
+631-223-6615`
+    },
+    {
+      id: 'quote', name: 'Send Quote', category: 'customer',
+      subject: '{{productName}} - Quote from Prestige Global',
+      body: `Hi {{contactName}},
+
+I have a great deal on {{productName}}:
+
+Product: {{productName}}
+Price: ${{price}} per case
+Quantity Available: {{quantity}} cases
+Valid Until: {{validUntil}}
+
+Let me know if you'd like to move forward.
+
+Thanks,
+John Gergely
+Prestige Global Distributors
+631-223-6615`
+    },
+    {
+      id: 'followup', name: 'Follow Up on Quote', category: 'customer',
+      subject: 'Following Up - {{productName}}',
+      body: `Hi {{contactName}},
+
+Just following up on the {{productName}} quote I sent over. This deal is moving fast and I wanted to make sure you had a chance to review it.
+
+Let me know if you have any questions.
+
+Thanks,
+John Gergely
+Prestige Global Distributors
+631-223-6615`
+    },
+    {
+      id: 'new_customer', name: 'New Customer Intro', category: 'customer',
+      subject: 'Closeout Deals - Prestige Global Distributors',
+      body: `Hi {{contactName}},
+
+My name is John Gergely with Prestige Global Distributors.
+
+We specialize in closeout and surplus CPG products at 30-50% below wholesale. We source from Kraft Heinz, Nestle, Conagra, Campbell's, and General Mills.
+
+Current inventory includes:
+- Canned soups and vegetables
+- Snacks and confectionery
+- Beverages
+
+I'd love to add you to our weekly deal list. Would that be helpful?
+
+Thanks,
+John Gergely
+President
+Prestige Global Distributors
+631-223-6615`
+    },
+    {
+      id: 'thank_you', name: 'Order Confirmation', category: 'customer',
+      subject: 'Thank You - Order Confirmation',
+      body: `Hi {{contactName}},
+
+Thank you for your order!
+
+Details:
+- Product: {{productName}}
+- Quantity: {{quantity}} cases
+- Price: ${{price}} per case
+
+I'll follow up with pickup/delivery details shortly.
+
+Thanks,
+John Gergely
+Prestige Global Distributors
+631-223-6615`
+    }
+  ];
+
+  const fillTemplate = (template) => {
+    let subject = template.subject;
+    let body = template.body;
+    Object.entries(emailVars).forEach(([key, value]) => {
+      const placeholder = `{{${key}}}`;
+      subject = subject.replace(new RegExp(placeholder.replace(/[{}]/g, '\\$&'), 'g'), value || `[${key}]`);
+      body = body.replace(new RegExp(placeholder.replace(/[{}]/g, '\\$&'), 'g'), value || `[${key}]`);
+    });
+    return { subject, body };
+  };
+
+  const copyTemplateToClipboard = (template) => {
+    const { subject, body } = fillTemplate(template);
+    navigator.clipboard.writeText(`Subject: ${subject}\n\n${body}`);
+    setCopiedTemplate(template.id);
+    setTimeout(() => setCopiedTemplate(null), 2000);
+  };
+
+  const openInEmailClient = (template, toEmail = '') => {
+    const { subject, body } = fillTemplate(template);
+    window.open(`mailto:${toEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank');
+  };
+
+  const useTemplateWithContact = (contact) => {
+    setEmailVars(prev => ({
+      ...prev,
+      contactName: contact.contact_name || '',
+      companyName: contact.company || ''
+    }));
+    setShowEmailModal(true);
+  };
+
   const startEditContact = (contact) => {
     setEditingContact(contact);
     setContactForm({
@@ -1981,6 +2169,13 @@ View quote: ${generateShareLink()}
                 <span className="hidden sm:inline">Deals</span>
                 <span className="sm:hidden">$</span>
               </button>
+              <button
+                onClick={() => setActiveTab('emails')}
+                className={`py-2 sm:py-3 px-1.5 sm:px-4 font-medium border-b-2 transition-colors text-xs sm:text-base whitespace-nowrap ${activeTab === 'emails' ? 'border-amber-600 text-amber-700' : 'border-transparent text-stone-500 hover:text-stone-700'}`}
+              >
+                <span className="hidden sm:inline">Emails</span>
+                <span className="sm:hidden">✉</span>
+              </button>
               <span className="border-r border-amber-200 mx-1"></span>
               <button
                 onClick={handleLogout}
@@ -2908,6 +3103,213 @@ View quote: ${generateShareLink()}
                 <button onClick={loadDeals} className="text-amber-600 hover:text-amber-700 font-medium">Refresh</button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Email Templates */}
+      {activeTab === 'emails' && (
+        <div className="max-w-4xl mx-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
+          {/* Variable Inputs */}
+          <div className="bg-white/80 rounded-lg shadow-sm border border-amber-100 p-4 sm:p-6">
+            <h2 className="text-lg font-bold text-stone-800 mb-1">Quick Fill Variables</h2>
+            <p className="text-stone-500 text-xs sm:text-sm mb-4">Fill these once, use across all templates</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-stone-600 mb-1">Contact Name</label>
+                <input
+                  type="text"
+                  value={emailVars.contactName}
+                  onChange={(e) => setEmailVars({ ...emailVars, contactName: e.target.value })}
+                  className="w-full border border-amber-200 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-amber-400"
+                  placeholder="John"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-stone-600 mb-1">Company</label>
+                <input
+                  type="text"
+                  value={emailVars.companyName}
+                  onChange={(e) => setEmailVars({ ...emailVars, companyName: e.target.value })}
+                  className="w-full border border-amber-200 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-amber-400"
+                  placeholder="Lewisco"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-stone-600 mb-1">Product</label>
+                <input
+                  type="text"
+                  value={emailVars.productName}
+                  onChange={(e) => setEmailVars({ ...emailVars, productName: e.target.value })}
+                  className="w-full border border-amber-200 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-amber-400"
+                  placeholder="Campbell's Soup"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-stone-600 mb-1">Quantity</label>
+                <input
+                  type="text"
+                  value={emailVars.quantity}
+                  onChange={(e) => setEmailVars({ ...emailVars, quantity: e.target.value })}
+                  className="w-full border border-amber-200 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-amber-400"
+                  placeholder="500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-stone-600 mb-1">Price</label>
+                <input
+                  type="text"
+                  value={emailVars.price}
+                  onChange={(e) => setEmailVars({ ...emailVars, price: e.target.value })}
+                  className="w-full border border-amber-200 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-amber-400"
+                  placeholder="29.90"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-stone-600 mb-1">Valid Until</label>
+                <input
+                  type="text"
+                  value={emailVars.validUntil}
+                  onChange={(e) => setEmailVars({ ...emailVars, validUntil: e.target.value })}
+                  className="w-full border border-amber-200 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-amber-400"
+                  placeholder="Jan 31"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Source Templates */}
+          <div className="bg-white/80 rounded-lg shadow-sm border border-amber-100 p-4 sm:p-6">
+            <h2 className="text-lg font-bold text-stone-800 mb-1 flex items-center gap-2">
+              <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
+              Source Emails
+            </h2>
+            <p className="text-stone-500 text-xs sm:text-sm mb-4">Templates for communicating with suppliers</p>
+            <div className="grid gap-3">
+              {emailTemplates.filter(t => t.category === 'source').map((template) => {
+                const { subject, body } = fillTemplate(template);
+                return (
+                  <div key={template.id} className="border border-emerald-200 rounded-lg p-3 sm:p-4 bg-emerald-50/50 hover:bg-emerald-50 transition-colors">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-stone-800">{template.name}</h3>
+                        <p className="text-xs text-stone-500 mt-0.5">Subject: {subject}</p>
+                        <p className="text-xs text-stone-400 mt-1 line-clamp-2">{body.split('\n')[0]}...</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => { setSelectedTemplate(template); setShowEmailModal(true); }}
+                          className="px-3 py-1.5 text-xs bg-white border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors font-medium"
+                        >
+                          Preview
+                        </button>
+                        <button
+                          onClick={() => copyTemplateToClipboard(template)}
+                          className={`px-3 py-1.5 text-xs rounded-lg transition-colors font-medium ${copiedTemplate === template.id ? 'bg-emerald-600 text-white' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'}`}
+                        >
+                          {copiedTemplate === template.id ? '✓ Copied!' : 'Copy'}
+                        </button>
+                        <button
+                          onClick={() => openInEmailClient(template)}
+                          className="px-3 py-1.5 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium"
+                        >
+                          Open Email
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Customer Templates */}
+          <div className="bg-white/80 rounded-lg shadow-sm border border-amber-100 p-4 sm:p-6">
+            <h2 className="text-lg font-bold text-stone-800 mb-1 flex items-center gap-2">
+              <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+              Customer Emails
+            </h2>
+            <p className="text-stone-500 text-xs sm:text-sm mb-4">Templates for communicating with buyers</p>
+            <div className="grid gap-3">
+              {emailTemplates.filter(t => t.category === 'customer').map((template) => {
+                const { subject, body } = fillTemplate(template);
+                return (
+                  <div key={template.id} className="border border-blue-200 rounded-lg p-3 sm:p-4 bg-blue-50/50 hover:bg-blue-50 transition-colors">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-stone-800">{template.name}</h3>
+                        <p className="text-xs text-stone-500 mt-0.5">Subject: {subject}</p>
+                        <p className="text-xs text-stone-400 mt-1 line-clamp-2">{body.split('\n')[0]}...</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => { setSelectedTemplate(template); setShowEmailModal(true); }}
+                          className="px-3 py-1.5 text-xs bg-white border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors font-medium"
+                        >
+                          Preview
+                        </button>
+                        <button
+                          onClick={() => copyTemplateToClipboard(template)}
+                          className={`px-3 py-1.5 text-xs rounded-lg transition-colors font-medium ${copiedTemplate === template.id ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}
+                        >
+                          {copiedTemplate === template.id ? '✓ Copied!' : 'Copy'}
+                        </button>
+                        <button
+                          onClick={() => openInEmailClient(template)}
+                          className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                        >
+                          Open Email
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Email Preview Modal */}
+      {showEmailModal && selectedTemplate && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-4 border-b border-amber-200 flex justify-between items-center sticky top-0 bg-white">
+              <h3 className="text-lg font-bold text-stone-800">{selectedTemplate.name}</h3>
+              <button onClick={() => { setShowEmailModal(false); setSelectedTemplate(null); }} className="text-stone-400 hover:text-stone-600 p-2">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1">Subject</label>
+                <div className="bg-stone-50 rounded-lg px-3 py-2 text-sm border border-stone-200">
+                  {fillTemplate(selectedTemplate).subject}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1">Body</label>
+                <div className="bg-stone-50 rounded-lg px-3 py-3 text-sm border border-stone-200 whitespace-pre-wrap font-mono text-xs">
+                  {fillTemplate(selectedTemplate).body}
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => copyTemplateToClipboard(selectedTemplate)}
+                  className={`flex-1 px-4 py-2.5 rounded-lg transition-colors font-medium ${copiedTemplate === selectedTemplate.id ? 'bg-emerald-600 text-white' : 'border border-stone-300 hover:bg-stone-50'}`}
+                >
+                  {copiedTemplate === selectedTemplate.id ? '✓ Copied to Clipboard!' : 'Copy to Clipboard'}
+                </button>
+                <button
+                  onClick={() => openInEmailClient(selectedTemplate)}
+                  className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium"
+                >
+                  Open in Email App
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
