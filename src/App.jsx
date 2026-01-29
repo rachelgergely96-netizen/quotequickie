@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabase';
-import html2pdf from 'html2pdf.js';
 
 // Company Logo Component
 const CompanyLogo = ({ size = 120 }) => (
@@ -1033,23 +1032,109 @@ Prestige Global Distributors
   };
 
   // Download invoice as PDF
-  const downloadInvoicePDF = () => {
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+
+  const downloadInvoicePDF = async () => {
     const element = document.getElementById('invoice-print');
-    if (!element) return;
+    if (!element) {
+      alert('Could not find invoice to generate PDF');
+      return;
+    }
 
-    const opt = {
-      margin: 0.5,
-      filename: `${currentInvoice.invoiceNumber}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
-      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
-    };
+    setIsGeneratingPDF(true);
 
-    html2pdf().set(opt).from(element).save();
+    try {
+      // Dynamic import of html2pdf
+      const html2pdfModule = await import('html2pdf.js');
+      const html2pdf = html2pdfModule.default;
+
+      const opt = {
+        margin: 0.5,
+        filename: `${currentInvoice.invoiceNumber}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, logging: false },
+        jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+      };
+
+      await html2pdf().set(opt).from(element).save();
+    } catch (error) {
+      console.error('PDF generation error:', error);
+      alert('Error generating PDF. Please try using Print instead.');
+    } finally {
+      setIsGeneratingPDF(false);
+    }
   };
 
-  // Email invoice
-  const emailInvoice = () => {
+  // Email invoice with PDF attachment
+  const emailInvoiceWithPDF = async () => {
+    if (!currentInvoice) return;
+
+    // First download the PDF
+    setIsGeneratingPDF(true);
+    const element = document.getElementById('invoice-print');
+
+    try {
+      const html2pdfModule = await import('html2pdf.js');
+      const html2pdf = html2pdfModule.default;
+
+      const opt = {
+        margin: 0.5,
+        filename: `${currentInvoice.invoiceNumber}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, logging: false },
+        jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+      };
+
+      // Download the PDF first
+      await html2pdf().set(opt).from(element).save();
+
+      // Then open email client
+      setTimeout(() => {
+        const customerEmail = currentInvoice.customer?.email || '';
+        const subject = `Invoice ${currentInvoice.invoiceNumber} from Prestige Global Distributors`;
+
+        const itemsList = currentInvoice.items?.map(item =>
+          `- ${item.description}: ${item.quantity} ${item.unit} x $${parseFloat(item.unitPrice).toFixed(2)} = $${parseFloat(item.total).toFixed(2)}`
+        ).join('\n') || '';
+
+        const body = `Dear ${currentInvoice.customer?.company || 'Customer'},
+
+Please find attached invoice ${currentInvoice.invoiceNumber}.
+
+INVOICE SUMMARY:
+Invoice #: ${currentInvoice.invoiceNumber}
+Date: ${new Date(currentInvoice.date).toLocaleDateString()}
+Due Date: ${new Date(currentInvoice.dueDate).toLocaleDateString()}
+
+ITEMS:
+${itemsList}
+
+TOTAL DUE: $${parseFloat(currentInvoice.total).toFixed(2)}
+
+Payment Terms: Net 30
+
+Please attach the downloaded PDF file (${currentInvoice.invoiceNumber}.pdf) to this email before sending.
+
+Thank you for your business!
+
+Best regards,
+John Gergely
+Prestige Global Distributors
+631-223-6615`;
+
+        window.open(`mailto:${customerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank');
+      }, 1000); // Small delay to allow PDF download to complete
+
+    } catch (error) {
+      console.error('Error:', error);
+      alert('Error generating PDF for email.');
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
+  // Quick email without PDF (just text)
+  const emailInvoiceText = () => {
     if (!currentInvoice) return;
 
     const customerEmail = currentInvoice.customer?.email || '';
@@ -3885,15 +3970,17 @@ View quote: ${generateShareLink()}
                   <div className="flex gap-3">
                     <button
                       onClick={downloadInvoicePDF}
-                      className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                      disabled={isGeneratingPDF}
+                      className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-wait"
                     >
-                      Download PDF
+                      {isGeneratingPDF ? 'Generating...' : 'Download PDF'}
                     </button>
                     <button
-                      onClick={emailInvoice}
-                      className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium"
+                      onClick={emailInvoiceWithPDF}
+                      disabled={isGeneratingPDF}
+                      className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-wait"
                     >
-                      Email Invoice
+                      {isGeneratingPDF ? 'Preparing...' : 'Email + PDF'}
                     </button>
                   </div>
                 </div>
@@ -3916,15 +4003,17 @@ View quote: ${generateShareLink()}
                   <div className="flex gap-3">
                     <button
                       onClick={downloadInvoicePDF}
-                      className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                      disabled={isGeneratingPDF}
+                      className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-wait"
                     >
-                      Download PDF
+                      {isGeneratingPDF ? 'Generating...' : 'Download PDF'}
                     </button>
                     <button
-                      onClick={emailInvoice}
-                      className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium"
+                      onClick={emailInvoiceWithPDF}
+                      disabled={isGeneratingPDF}
+                      className="flex-1 px-4 py-2.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-wait"
                     >
-                      Email Invoice
+                      {isGeneratingPDF ? 'Preparing...' : 'Email + PDF'}
                     </button>
                   </div>
                 </div>
