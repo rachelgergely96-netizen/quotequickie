@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabase';
+import PGDAssistant from './PGDAssistant';
 
 // Company Logo Component - uses image file from public folder
 const CompanyLogo = ({ size = 120 }) => (
@@ -4704,6 +4705,9 @@ HLA - Customer / Distributor - (800) 325-2512`}
           </div>
         </div>
       )}
+
+      {/* PGD Sourcing Assistant Widget */}
+      <PGDAssistant />
     </div>
   );
 }
